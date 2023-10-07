@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1696680751715,
+  "lastUpdate": 1696682904487,
   "repoUrl": "https://github.com/rerun-io/rerun",
   "entries": {
     "Sizes": [
@@ -506,6 +506,75 @@ window.BENCHMARK_DATA = {
           "url": "https://github.com/rerun-io/rerun/commit/25f157f90770a8858785fea5c439b750742317fb"
         },
         "date": 1696680736844,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "Wasm",
+            "value": "15.36",
+            "unit": "MiB"
+          },
+          {
+            "name": "JS",
+            "value": "113.04",
+            "unit": "kiB"
+          },
+          {
+            "name": "arkit_scenes.rrd",
+            "value": "40.37",
+            "unit": "MiB"
+          },
+          {
+            "name": "detect_and_track_objects.rrd",
+            "value": "55.19",
+            "unit": "MiB"
+          },
+          {
+            "name": "dicom_mri.rrd",
+            "value": "63.36",
+            "unit": "MiB"
+          },
+          {
+            "name": "dna.rrd",
+            "value": "0.62",
+            "unit": "MiB"
+          },
+          {
+            "name": "human_pose_tracking.rrd",
+            "value": "54.41",
+            "unit": "MiB"
+          },
+          {
+            "name": "plots.rrd",
+            "value": "0.19",
+            "unit": "MiB"
+          },
+          {
+            "name": "structure_from_motion.rrd",
+            "value": "6.85",
+            "unit": "MiB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49431240+abey79@users.noreply.github.com",
+            "name": "Antoine Beyeler",
+            "username": "abey79"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fe8d1e0d550f7d3bc10590e0b7dd5fc4f3d13f3e",
+          "message": "Add checkbox to PR template to remind about better PR titles (#3724)\n\n### What\r\n\r\nThis PR adds the fourth checkbox below 👇🏻 \r\n\r\n### Checklist\r\n* [x] I have read and agree to [Contributor\r\nGuide](https://github.com/rerun-io/rerun/blob/main/CONTRIBUTING.md) and\r\nthe [Code of\r\nConduct](https://github.com/rerun-io/rerun/blob/main/CODE_OF_CONDUCT.md)\r\n* [x] ~~I've included a screenshot or gif (if applicable)~~\r\n* [x] ~~I have tested [demo.rerun.io](https://demo.rerun.io/pr/3724) (if\r\napplicable)~~\r\n* [x] The PR title and labels are set such as to maximize their\r\nusefulness for the next release's CHANGELOG\r\n\r\n- [PR Build Summary](https://build.rerun.io/pr/3724)\r\n- [Docs\r\npreview](https://rerun.io/preview/fafee5d2455b7674e935d6b5bb7fb1050a463b37/docs)\r\n<!--DOCS-PREVIEW-->\r\n- [Examples\r\npreview](https://rerun.io/preview/fafee5d2455b7674e935d6b5bb7fb1050a463b37/examples)\r\n<!--EXAMPLES-PREVIEW-->\r\n- [Recent benchmark results](https://ref.rerun.io/dev/bench/)\r\n- [Wasm size tracking](https://ref.rerun.io/dev/sizes/)",
+          "timestamp": "2023-10-07T14:15:15+02:00",
+          "tree_id": "98fa5537877cc91b18c2342910f12ae8d7c103f0",
+          "url": "https://github.com/rerun-io/rerun/commit/fe8d1e0d550f7d3bc10590e0b7dd5fc4f3d13f3e"
+        },
+        "date": 1696682891924,
         "tool": "customSmallerIsBetter",
         "benches": [
           {
