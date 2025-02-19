@@ -36,8 +36,15 @@ let first = if vec.is_empty() {
 can be better written as:
 
 ``` rust
-let Some(first) = vec.get(0) else { return; };
+let Some(first) = vec.get(0) else {
+    return;
+};
 ```
+
+### Iterators
+Be careful when iterating over `HashSet`s and `HashMap`s, as the order is non-deterministic.
+Whenever you return a list or an iterator, sort it first.
+If you don't want to sort it for performance reasons, you MUST put `unsorted` in the  name as a warning.
 
 ### Error handling and logging
 We log problems using our own `re_log` crate (which is currently a wrapper around [`tracing`](https://crates.io/crates/tracing/)).
@@ -142,9 +149,6 @@ We prefer `{}` for constructors (`Foo{…}` instead of `Foo(…)`), though there
 
 Prefer `using Type = …;` over `typedef … Type;`.
 
-### Misc
-We don't add `inline` before class/struct member functions if they are inlined in the class/struct definition.
-
 ### Members
 We prefix _private_ member variables with a `_`:
 
@@ -174,6 +178,44 @@ struct Thing {
     }
 }
 ```
+
+### Constructors and builder pattern
+We use C++ constructors when it is unambiguous, but prefer _named static constructors_ otherwise.
+Like Rust, we use the `from_` prefix for static constructors, and the `with_` prefix for builder methods.
+
+```C++
+class Rect {
+    // We can't just overload normal constructors for these:
+    static Rect from_min_max(Vec2 min, Vec2 max) { … }
+    static Rect from_center_size(Vec2 center, Vec2 size) { … }
+
+    Rect with_color(Color color) && {
+        _color = color;
+        return std::move(*this); // `*this` is always an lvalue, so we have to move it to avoid a copy.
+    }
+}
+```
+
+### Constants & Enums
+
+Constants & enum values have PascalCase names.
+
+When possible, use `constexpr` for (global & struct/class scoped) constants.
+
+### String handling
+Whenever possible we use `std::string_view` to pass strings.
+
+To accommodate for this and other languages, strings on the C interface are almost never expected to be null-terminated and are always passed along with a byte length using `rr_string`.
+
+
+### Misc
+We don't add `inline` before class/struct member functions if they are inlined in the class/struct definition.
+
+Preprocessor directives/macros are usually prefixed with `RR_`
+
+Include what you use: if you use `std::vector`, then include `<vector>` - don't depend on a transitive include.
+
+We prefer the "data, length" parameter order, e.g. `void foo(const void* data, size_t len)` or `void image(const f32* data, Resolution resolution)`.
 
 
 ## Naming

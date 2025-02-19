@@ -1,6 +1,6 @@
 //! Logs a `Pinhole` archetype for roundtrip checks.
 
-use rerun::{archetypes::Pinhole, datatypes::Mat3x3, external::re_log, RecordingStream};
+use rerun::{archetypes::Pinhole, datatypes::Mat3x3, RecordingStream};
 
 #[derive(Debug, clap::Parser)]
 #[clap(author, version, about)]
@@ -20,17 +20,11 @@ fn run(rec: &RecordingStream, _args: &Args) -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
-    re_log::setup_native_logging();
+    re_log::setup_logging();
 
     use clap::Parser as _;
     let args = Args::parse();
 
-    let default_enabled = true;
-    args.rerun.clone().run(
-        "rerun_example_roundtrip_pinhole",
-        default_enabled,
-        move |rec| {
-            run(&rec, &args).unwrap();
-        },
-    )
+    let (rec, _serve_guard) = args.rerun.init("rerun_example_roundtrip_pinhole")?;
+    run(&rec, &args)
 }

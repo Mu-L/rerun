@@ -11,11 +11,7 @@
 use std::path::PathBuf;
 
 use bytes::Bytes;
-use rerun::{
-    components::{MeshProperties, Transform3D},
-    external::{ecolor, re_log, re_memory::AccountingAllocator},
-    Color, Mesh3D, RecordingStream,
-};
+use rerun::{external::re_log, Color, Mesh3D, RecordingStream, Rgba32};
 
 // TODO(cmc): This example needs to support animations to showcase Rerun's time capabilities.
 
@@ -31,7 +27,7 @@ impl From<GltfPrimitive> for Mesh3D {
             vertex_positions,
             vertex_colors,
             vertex_normals,
-            vertex_texcoords: _, // TODO(cmc): support mesh texturing
+            vertex_texcoords,
         } = primitive;
 
         let mut mesh = Mesh3D::new(vertex_positions);
@@ -39,8 +35,7 @@ impl From<GltfPrimitive> for Mesh3D {
         if let Some(indices) = indices {
             assert!(indices.len() % 3 == 0);
             let triangle_indices = indices.chunks_exact(3).map(|tri| (tri[0], tri[1], tri[2]));
-            mesh =
-                mesh.with_mesh_properties(MeshProperties::from_triangle_indices(triangle_indices));
+            mesh = mesh.with_triangle_indices(triangle_indices);
         }
         if let Some(vertex_normals) = vertex_normals {
             mesh = mesh.with_vertex_normals(vertex_normals);
@@ -48,11 +43,11 @@ impl From<GltfPrimitive> for Mesh3D {
         if let Some(vertex_colors) = vertex_colors {
             mesh = mesh.with_vertex_colors(vertex_colors);
         }
-        if albedo_factor.is_some() {
-            mesh = mesh.with_mesh_material(rerun::datatypes::Material {
-                albedo_factor: albedo_factor
-                    .map(|[r, g, b, a]| ecolor::Rgba::from_rgba_unmultiplied(r, g, b, a).into()),
-            });
+        if let Some(vertex_texcoords) = vertex_texcoords {
+            mesh = mesh.with_vertex_texcoords(vertex_texcoords);
+        }
+        if let Some([r, g, b, a]) = albedo_factor {
+            mesh = mesh.with_albedo_factor(Rgba32::from_linear_unmultiplied_rgba_f32(r, g, b, a));
         }
 
         mesh.sanity_check().unwrap();
@@ -62,9 +57,9 @@ impl From<GltfPrimitive> for Mesh3D {
 }
 
 // Declare how to turn a glTF transform into a Rerun component (`Transform`).
-impl From<GltfTransform> for Transform3D {
+impl From<GltfTransform> for rerun::Transform3D {
     fn from(transform: GltfTransform) -> Self {
-        Transform3D::from_translation_rotation_scale(
+        rerun::Transform3D::from_translation_rotation_scale(
             transform.t,
             rerun::datatypes::Quaternion::from_xyzw(transform.r),
             transform.s,
@@ -76,11 +71,8 @@ impl From<GltfTransform> for Transform3D {
 fn log_node(rec: &RecordingStream, node: GltfNode) -> anyhow::Result<()> {
     rec.set_time_sequence("keyframe", 0);
 
-    if let Some(transform) = node.transform.map(Transform3D::from) {
-        rec.log(
-            node.name.as_str(),
-            &rerun::archetypes::Transform3D::new(transform),
-        )?;
+    if let Some(transform) = node.transform.map(rerun::Transform3D::from) {
+        rec.log(node.name.as_str(), &transform)?;
     }
 
     // Convert glTF objects into Rerun components.
@@ -99,12 +91,6 @@ fn log_node(rec: &RecordingStream, node: GltfNode) -> anyhow::Result<()> {
 }
 
 // --- Init ---
-
-// Use MiMalloc as global allocator (because it is fast), wrapped in Rerun's allocation tracker
-// so that the rerun viewer can show how much memory it is using when calling `show`.
-#[global_allocator]
-static GLOBAL: AccountingAllocator<mimalloc::MiMalloc> =
-    AccountingAllocator::new(mimalloc::MiMalloc);
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 enum Scene {
@@ -151,7 +137,7 @@ impl Args {
             anyhow::bail!(
                 "Could not load the scene, have you downloaded the dataset? \
                 Try running the python version first to download it automatically \
-                (`examples/python/raw_mesh/main.py --scene {scene_name}`).",
+                (`python -m raw_mesh --scene {scene_name}`).",
             )
         }
 
@@ -167,7 +153,10 @@ fn run(rec: &RecordingStream, args: &Args) -> anyhow::Result<()> {
     // Log raw glTF nodes and their transforms with Rerun
     for root in nodes {
         re_log::info!(scene = root.name, "logging glTF scene");
-        rec.log_timeless(root.name.as_str(), &rerun::ViewCoordinates::RIGHT_HAND_Y_UP)?;
+        rec.log_static(
+            root.name.as_str(),
+            &rerun::ViewCoordinates::RIGHT_HAND_Y_UP(),
+        )?;
         log_node(rec, root)?;
     }
 
@@ -175,17 +164,13 @@ fn run(rec: &RecordingStream, args: &Args) -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
-    re_log::setup_native_logging();
+    re_log::setup_logging();
 
     use clap::Parser as _;
     let args = Args::parse();
 
-    let default_enabled = true;
-    args.rerun
-        .clone()
-        .run("rerun_example_raw_mesh_rs", default_enabled, move |rec| {
-            run(&rec, &args).unwrap();
-        })
+    let (rec, _serve_guard) = args.rerun.init("rerun_example_raw_mesh")?;
+    run(&rec, &args)
 }
 
 // --- glTF parsing ---
@@ -278,6 +263,8 @@ fn node_primitives<'data>(
 
             let vertex_texcoords = reader.read_tex_coords(0); // TODO(cmc): pick correct set
             let vertex_texcoords = vertex_texcoords.map(|texcoords| texcoords.into_f32().collect());
+
+            // TODO(cmc): support for albedo textures
 
             GltfPrimitive {
                 albedo_factor,

@@ -1,7 +1,0 @@
-numpy
-opencv-python
-pandas
-rerun-sdk
-scipy
-tqdm
-trimesh

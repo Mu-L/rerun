@@ -1,6 +1,6 @@
 //! Logs a `LineStrips3D` archetype for roundtrip checks.
 
-use rerun::{archetypes::LineStrips3D, external::re_log, RecordingStream};
+use rerun::{archetypes::LineStrips3D, RecordingStream};
 
 #[derive(Debug, clap::Parser)]
 #[clap(author, version, about)]
@@ -17,24 +17,17 @@ fn run(rec: &RecordingStream, _args: &Args) -> anyhow::Result<()> {
             .with_radii([0.42, 0.43])
             .with_colors([0xAA0000CC, 0x00BB00DD])
             .with_labels(["hello", "friend"])
-            .with_class_ids([126, 127])
-            .with_instance_keys([66, 666]),
+            .with_class_ids([126, 127]),
     )
     .map_err(Into::into)
 }
 
 fn main() -> anyhow::Result<()> {
-    re_log::setup_native_logging();
+    re_log::setup_logging();
 
     use clap::Parser as _;
     let args = Args::parse();
 
-    let default_enabled = true;
-    args.rerun.clone().run(
-        "rerun_example_roundtrip_line_strips3d",
-        default_enabled,
-        move |rec| {
-            run(&rec, &args).unwrap();
-        },
-    )
+    let (rec, _serve_guard) = args.rerun.init("rerun_example_roundtrip_line_strips3d")?;
+    run(&rec, &args)
 }

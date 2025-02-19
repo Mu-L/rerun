@@ -5,7 +5,6 @@
 use std::time::Duration;
 
 fn main() {
-    // TODO(cmc): Why is this not taking the full screen?
     const CSS: &str = r#"
         html {
             /* Remove touch delay: */
@@ -34,31 +33,6 @@ fn main() {
             padding: 0 !important;
             height: 100%;
             width: 100%;
-        }
-
-        /* Position canvas in center-top: */
-        canvas {
-            margin-right: auto;
-            margin-left: auto;
-            display: block;
-            position: absolute;
-            top: 0%;
-            left: 50%;
-            transform: translate(-50%, 0%);
-        }
-
-        .centered {
-            margin-right: auto;
-            margin-left: auto;
-            display: block;
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: #f0f0f0;
-            font-size: 24px;
-            font-family: Ubuntu-Light, Helvetica, sans-serif;
-            text-align: center;
         }
 
         /* ---------------------------------------------- */
@@ -94,10 +68,14 @@ fn main() {
 
     use pico_args::Arguments;
     let mut args = Arguments::from_env();
-    let host: Option<String> = args.opt_value_from_str("--host").unwrap();
-    let port: Option<String> = args.opt_value_from_str("--port").unwrap();
-    let host = host.as_deref().unwrap_or("localhost");
-    let port = port.as_deref().unwrap_or("8000");
+    let host = args
+        .opt_value_from_str("--host")
+        .unwrap_or(None)
+        .unwrap_or("localhost".to_owned());
+    let port = args
+        .opt_value_from_str("--port")
+        .unwrap_or(None)
+        .unwrap_or("8000".to_owned());
 
     let thread = std::thread::Builder::new()
         .name("cargo_run_wasm".into())
@@ -107,7 +85,7 @@ fn main() {
         .expect("Failed to spawn thread");
 
     if args.contains("--build-only") {
-        thread.join().unwrap();
+        thread.join().expect("std::thread::join() failed");
     } else {
         // It would be nice to start a web-browser, but we can't really know when the server is ready.
         // So we just sleep for a while and hope it works.

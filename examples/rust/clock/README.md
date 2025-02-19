@@ -1,9 +1,9 @@
----
-title: Clock
-python: https://github.com/rerun-io/rerun/tree/latest/examples/python/clock/main.py
-rust: https://github.com/rerun-io/rerun/tree/latest/examples/rust/clock/src/main.rs
-thumbnail: https://static.rerun.io/clock/ae4b8970edba8480431cb71e57b8cddd9e1769c7/480w.png
----
+<!--[metadata]
+title = "Clock"
+thumbnail = "https://static.rerun.io/clock/8c49e25f5cac4d6a1d7d0490b14cf6881bdb707b/480w.png"
+thumbnail_dimensions = [480, 480]
+-->
+
 
 <picture>
   <source media="(max-width: 480px)" srcset="https://static.rerun.io/clock/05e69dc20c9a28005f1ffe7f0f2ac9eeaa95ba3b/480w.png">

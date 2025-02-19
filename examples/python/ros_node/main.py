@@ -4,11 +4,12 @@ Simple example of a ROS node that republishes some common types to Rerun.
 
 The solution here is mostly a toy example to show how ROS concepts can be
 mapped to Rerun. Fore more information on future improved ROS support,
-see the tracking issue: https://github.com/rerun-io/rerun/issues/1537
+see the tracking issue: <https://github.com/rerun-io/rerun/issues/1537>.
 
 NOTE: Unlike many of the other examples, this example requires a system installation of ROS
 in addition to the packages from requirements.txt.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -85,7 +86,7 @@ class TurtleSubscriber(Node):  # type: ignore[misc]
         rr.log(
             "map/box",
             rr.Boxes3D(half_sizes=[3, 3, 1], centers=[0, 0, 1], colors=[255, 255, 255, 255]),
-            timeless=True,
+            static=True,
         )
 
         # Subscriptions
@@ -182,8 +183,8 @@ class TurtleSubscriber(Node):  # type: ignore[misc]
         rr.set_time_nanos("ros_time", time.nanoseconds)
 
         # Capture time-series data for the linear and angular velocities
-        rr.log("odometry/vel", rr.TimeSeriesScalar(odom.twist.twist.linear.x))
-        rr.log("odometry/ang_vel", rr.TimeSeriesScalar(odom.twist.twist.angular.z))
+        rr.log("odometry/vel", rr.Scalar(odom.twist.twist.linear.x))
+        rr.log("odometry/ang_vel", rr.Scalar(odom.twist.twist.angular.z))
 
         # Update the robot pose itself via TF
         self.log_tf_as_transform3d("map/robot", time)
@@ -264,7 +265,7 @@ class TurtleSubscriber(Node):  # type: ignore[misc]
         urdf.scene.graph.update(frame_to="camera_link", matrix=orig.dot(scale))
         scaled = urdf.scene.scaled(1.0)
 
-        rerun_urdf.log_scene(scene=scaled, node=urdf.base_link, path="map/robot/urdf", timeless=True)
+        rerun_urdf.log_scene(scene=scaled, node=urdf.base_link, path="map/robot/urdf", static=True)
 
 
 def main() -> None:

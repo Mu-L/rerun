@@ -1,41 +1,18 @@
 #include <rerun.hpp>
+#include <rerun/demo_utils.hpp>
 
-#include <array>
+using rerun::demo::grid3d;
 
-namespace rrc = rerun::components;
+int main() {
+    // Create a new `RecordingStream` which sends data over TCP to the viewer process.
+    const auto rec = rerun::RecordingStream("rerun_example_cpp");
+    // Try to spawn a new viewer instance.
+    rec.spawn().exit_on_failure();
 
-int main(int argc, char** argv) {
-    auto rec = rerun::RecordingStream("rerun_example_cpp_app");
-    rec.connect("127.0.0.1:9876").throw_on_failure();
+    // Create some data using the `grid` utility function.
+    std::vector<rerun::Position3D> points = grid3d<rerun::Position3D, float>(-10.f, 10.f, 10);
+    std::vector<rerun::Color> colors = grid3d<rerun::Color, uint8_t>(0, 255, 10);
 
-    // Log points with the archetype api - this is the preferred way of logging.
-    rec.log(
-        "3d/points",
-        rerun::Points3D({{1.0f, 2.0f, 3.0f}, {4.0f, 5.0f, 6.0f}})
-            .with_radii({0.42f, 0.43f})
-            .with_colors({0xAA0000CC, 0x00BB00DD})
-            .with_labels({"hello", "friend"})
-            .with_class_ids({126, 127})
-            .with_keypoint_ids({2, 3})
-            .with_instance_keys({66, 666})
-    );
-
-    // Log points with the components api - this is the advanced way of logging components in a
-    // fine-grained matter. It supports passing various types of containers.
-    rrc::Text c_style_array[3] = {rrc::Text("hello"), rrc::Text("friend"), rrc::Text("yo")};
-    rec.log(
-        "2d/points",
-        std::vector{
-            rrc::Position2D(0.0f, 0.0f),
-            rrc::Position2D(1.0f, 3.0f),
-            rrc::Position2D(5.0f, 5.0f),
-        },
-        std::array{rrc::Color(0xFF0000FF), rrc::Color(0x00FF00FF), rrc::Color(0x0000FFFF)},
-        c_style_array
-    );
-
-    // Test some type instantiation
-    auto tls = rerun::datatypes::TranslationRotationScale3D{};
-    tls.translation = {1.0, 2.0, 3.0};
-    rerun::datatypes::Transform3D t = std::move(tls);
+    // Log the "my_points" entity with our data, using the `Points3D` archetype.
+    rec.log("my_points", rerun::Points3D(points).with_colors(colors).with_radii({0.5f}));
 }

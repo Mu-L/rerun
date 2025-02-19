@@ -6,9 +6,13 @@ publish = false
 rust-version.workspace = true
 version.workspace = true
 
-[dependencies]
-rerun = { path = "../../../../crates/rerun", features = ["native_viewer"] }
+[lints]
+workspace = true
 
-anyhow = "1.0"
-clap = { version = "4.0", features = ["derive"] }
+[dependencies]
+re_log = { workspace = true, features = ["setup"] }
+rerun = { path = "../../../../crates/top/rerun", features = ["clap"] }
+
+anyhow.workspace = true
+clap = { workspace = true, features = ["derive"] }
 ndarray.workspace = true

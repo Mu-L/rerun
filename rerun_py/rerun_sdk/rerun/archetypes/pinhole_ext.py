@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+import math
 from typing import Any, cast
 
 import numpy.typing as npt
 
-from ..components import ViewCoordinatesLike
-from ..datatypes.mat3x3 import Mat3x3Like
-from ..datatypes.vec2d import Vec2D, Vec2DLike
+from ..datatypes import Mat3x3Like, Vec2D, Vec2DLike, ViewCoordinatesLike
 from ..error_utils import _send_warning_or_raise, catch_and_log_exceptions
 
 
@@ -23,6 +22,9 @@ class PinholeExt:
         height: int | float | None = None,
         focal_length: float | npt.ArrayLike | None = None,
         principal_point: npt.ArrayLike | None = None,
+        fov_y: float | None = None,
+        aspect_ratio: float | None = None,
+        image_plane_distance: float | None = None,
     ) -> None:
         """
         Create a new instance of the Pinhole archetype.
@@ -78,6 +80,14 @@ class PinholeExt:
             Width of the image in pixels.
         height:
             Height of the image in pixels.
+        fov_y:
+            Vertical field of view in radians.
+        aspect_ratio
+            Aspect ratio (width/height).
+        image_plane_distance:
+            The distance from the camera origin to the image plane when the projection is shown in a 3D viewer.
+            This is only used for visualization purposes, and does not affect the projection itself.
+
         """
 
         with catch_and_log_exceptions(context=self.__class__.__name__):
@@ -88,18 +98,32 @@ class PinholeExt:
 
             # TODO(andreas): Use a union type for the Pinhole component instead ~Zof converting to a matrix here
             if image_from_camera is None:
-                # Resolution is needed for various fallbacks/error cases below.
-                if resolution is None:
-                    resolution = [1.0, 1.0]
-                resolution = Vec2D(resolution)
-                width = cast(float, resolution.xy[0])
-                height = cast(float, resolution.xy[1])
+                if fov_y is not None and aspect_ratio is not None:
+                    EPSILON = 1.19209e-07
+                    focal_length = focal_length = 0.5 / math.tan(max(fov_y * 0.5, EPSILON))
+                    resolution = [aspect_ratio, 1.0]
+
+                if resolution is not None:
+                    res_vec = Vec2D(resolution)
+                    width = cast(float, res_vec.xy[0])
+                    height = cast(float, res_vec.xy[1])
+                else:
+                    width = None
+                    height = None
 
                 if focal_length is None:
-                    _send_warning_or_raise("either image_from_camera or focal_length must be set", 1)
-                    focal_length = (width * height) ** 0.5  # a reasonable default
+                    if height is None or width is None:
+                        raise ValueError("Either image_from_camera or focal_length must be set")
+                    else:
+                        _send_warning_or_raise("Either image_from_camera or focal_length must be set", 1)
+                        focal_length = (width * height) ** 0.5  # a reasonable best-effort default
+
                 if principal_point is None:
-                    principal_point = [width / 2, height / 2]
+                    if height is not None and width is not None:
+                        principal_point = [width / 2, height / 2]
+                    else:
+                        raise ValueError("Must provide one of principal_point, resolution, or width/height")
+
                 if type(focal_length) in (int, float):
                     fl_x = focal_length
                     fl_y = focal_length
@@ -109,17 +133,13 @@ class PinholeExt:
                         fl_x = focal_length[0]  # type: ignore[index]
                         fl_y = focal_length[1]  # type: ignore[index]
                     except Exception:
-                        _send_warning_or_raise("Expected focal_length to be one or two floats", 1)
-                        fl_x = width / 2
-                        fl_y = fl_x
+                        raise ValueError("Expected focal_length to be one or two floats")
 
                 try:
                     u_cen = principal_point[0]  # type: ignore[index]
                     v_cen = principal_point[1]  # type: ignore[index]
                 except Exception:
-                    _send_warning_or_raise("Expected principal_point to be one or two floats", 1)
-                    u_cen = width / 2
-                    v_cen = height / 2
+                    raise ValueError("Expected principal_point to be one or two floats")
 
                 image_from_camera = [[fl_x, 0, u_cen], [0, fl_y, v_cen], [0, 0, 1]]  # type: ignore[assignment]
             else:
@@ -127,8 +147,15 @@ class PinholeExt:
                     _send_warning_or_raise("Both image_from_camera and focal_length set", 1)
                 if principal_point is not None:
                     _send_warning_or_raise("Both image_from_camera and principal_point set", 1)
+                if fov_y is not None or aspect_ratio is not None:
+                    _send_warning_or_raise("Both image_from_camera and fov_y or aspect_ratio set", 1)
 
-            self.__attrs_init__(image_from_camera=image_from_camera, resolution=resolution, camera_xyz=camera_xyz)
+            self.__attrs_init__(
+                image_from_camera=image_from_camera,
+                resolution=resolution,
+                camera_xyz=camera_xyz,
+                image_plane_distance=image_plane_distance,
+            )
             return
 
         self.__attrs_clear__()

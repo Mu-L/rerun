@@ -3,10 +3,11 @@
   // for the documentation about the extensions.json format
   "recommendations": [
     "charliermarsh.ruff",
+    "esbenp.prettier-vscode",
+    "fill-labs.dependi",
     "gaborv.flatbuffers",
     "github.vscode-github-actions",
     "josetr.cmake-language-support-vscode",
-    "ms-python.black-formatter",
     "ms-python.mypy-type-checker",
     "ms-python.python",
     "ms-vscode.cmake-tools",
@@ -14,7 +15,6 @@
     "ms-vsliveshare.vsliveshare",
     "polymeilex.wgsl",
     "rust-lang.rust-analyzer",
-    "serayuzgur.crates",
     "streetsidesoftware.code-spell-checker",
     "tamasfe.even-better-toml",
     "vadimcn.vscode-lldb",

@@ -6,11 +6,17 @@ int main(void) {
 
     rr_error error = {0};
     const rr_store_info store_info = {
-        .application_id = "c-example-app",
-        .store_kind = RERUN_STORE_KIND_RECORDING,
+        .application_id = rr_make_string("c-example-app"),
+        .recording_id = rr_make_string(NULL),
+        .store_kind = RR_STORE_KIND_RECORDING,
     };
-    rr_recording_stream rec = rr_recording_stream_new(&store_info, &error);
-    rr_recording_stream_connect(rec, "127.0.0.1:9876", 2.0, &error);
+    rr_recording_stream rec = rr_recording_stream_new(&store_info, true, &error);
+
+    // Connect to running viewer:
+    //rr_recording_stream_connect(rec, rr_make_string("127.0.0.1:9876"), &error);
+
+    // Spawn and connect:
+    rr_recording_stream_spawn(rec, NULL, &error);
 
     if (error.code != 0) {
         printf("Error occurred: %s\n", error.description);

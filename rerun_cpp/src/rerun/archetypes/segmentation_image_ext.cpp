@@ -1,48 +1,77 @@
-#include "../error.hpp"
+#if 0
+
 #include "segmentation_image.hpp"
 
-// Uncomment for better auto-complete while editing the extension.
-// #define EDIT_EXTENSION
+// <CODEGEN_COPY_TO_HEADER>
+#include "../image_utils.hpp"
 
-namespace rerun {
-    namespace archetypes {
+// </CODEGEN_COPY_TO_HEADER>
+namespace rerun::archetypes {
+    // <CODEGEN_COPY_TO_HEADER>
 
-#ifdef EDIT_EXTENSION
-        // [CODEGEN COPY TO HEADER START]
+    /// Constructs image from pointer + resolution, inferring the datatype from the pointer type.
+    ///
+    /// @param pixels The raw image data.
+    /// ⚠️ Does not take ownership of the data, the caller must ensure the data outlives the image.
+    /// The number of elements is assumed to be `W * H`.
+    /// @param resolution The resolution of the image as {width, height}.
+    template <typename TElement>
+    SegmentationImage(const TElement* pixels, WidthHeight resolution)
+        : SegmentationImage{
+              reinterpret_cast<const uint8_t*>(pixels), resolution, get_datatype(pixels)
+          } {}
 
-        /// New segmentation image from height/width and tensor buffer.
-        ///
-        /// Sets the dimension names to "height" and "width" if they are not specified.
-        /// Calls `Error::handle()` if the shape is not rank 2.
-        SegmentationImage(
-            std::vector<datatypes::TensorDimension> shape, datatypes::TensorBuffer buffer
-        )
-            : SegmentationImage(datatypes::TensorData(std::move(shape), std::move(buffer))) {}
+    /// Constructs image from pixel data + resolution with datatype inferred from the passed collection.
+    ///
+    /// @param pixels The raw image data.
+    /// If the data does not outlive the image, use `std::move` or create the `rerun::Collection`
+    /// explicitly ahead of time with `rerun::Collection::take_ownership`.
+    /// The length of the data should be `W * H`.
+    /// @param resolution The resolution of the image as {width, height}.
+    template <typename TElement>
+    SegmentationImage(Collection<TElement> pixels, WidthHeight resolution)
+        : SegmentationImage{pixels.to_uint8(), resolution, get_datatype(pixels.data())} {}
 
-        /// New segmentation image from tensor data.
-        ///
-        /// Sets the dimension names to "height" and "width" if they are not specified.
-        /// Calls `Error::handle()` if the shape is not rank 2.
-        explicit SegmentationImage(components::TensorData _data);
+    /// Constructs image from pixel data + resolution with explicit datatype. Borrows data from a pointer (i.e. data must outlive the image!).
+    ///
+    /// @param bytes The raw image data.
+    /// ⚠️ Does not take ownership of the data, the caller must ensure the data outlives the image.
+    /// The byte size of the data is assumed to be `W * H * datatype.size`
+    /// @param resolution The resolution of the image as {width, height}.
+    /// @param datatype How the data should be interpreted.
+    SegmentationImage(
+        const void* bytes, WidthHeight resolution,
+        datatypes::ChannelDatatype datatype
+    )
+        : SegmentationImage{Collection<uint8_t>::borrow(bytes, num_bytes(resolution, datatype)), resolution, datatype} {}
 
-        // [CODEGEN COPY TO HEADER END]
-#endif
-
-        SegmentationImage::SegmentationImage(components::TensorData _data)
-            : data(std::move(_data)) {
-            auto& shape = data.data.shape;
-            if (shape.size() != 2) {
-                Error(ErrorCode::InvalidTensorDimension, "Shape must be rank 2.").handle();
-                return;
-            }
-
-            if (!shape[0].name.has_value()) {
-                shape[0].name = "height";
-            }
-            if (!shape[1].name.has_value()) {
-                shape[1].name = "width";
-            }
+    /// Constructs image from pixel data + resolution + datatype.
+    ///
+    /// @param bytes The raw image data as bytes.
+    /// If the data does not outlive the image, use `std::move` or create the `rerun::Collection`
+    /// explicitly ahead of time with `rerun::Collection::take_ownership`.
+    /// The length of the data should be `W * H`.
+    /// @param resolution The resolution of the image as {width, height}.
+    /// @param datatype How the data should be interpreted.
+    SegmentationImage(
+        Collection<uint8_t> bytes, WidthHeight resolution,
+        datatypes::ChannelDatatype datatype
+    ) {
+        auto image_format = datatypes::ImageFormat{resolution, datatype};
+        if (bytes.size() != image_format.num_bytes()) {
+            Error(
+                ErrorCode::InvalidTensorDimension,
+                "SegmentationImage buffer has the wrong size. Got " + std::to_string(bytes.size()) +
+                    " bytes, expected " + std::to_string(image_format.num_bytes())
+            )
+                .handle();
         }
+        *this = std::move(*this).with_buffer(bytes).with_format(image_format);
+    }
 
-    } // namespace archetypes
-} // namespace rerun
+
+    // </CODEGEN_COPY_TO_HEADER>
+
+} // namespace rerun::archetypes
+
+#endif

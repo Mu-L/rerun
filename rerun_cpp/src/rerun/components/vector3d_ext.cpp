@@ -11,10 +11,13 @@ namespace rerun {
             float vector[3];
 #define Vector3D Vector3DExt
 
-            // [CODEGEN COPY TO HEADER START]
+            // <CODEGEN_COPY_TO_HEADER>
 
             /// Construct Vector3D from x/y/z values.
             Vector3D(float x, float y, float z) : vector{x, y, z} {}
+
+            /// Construct Vec3D from x/y/z float pointer.
+            explicit Vector3D(const float* xyz) : vector{xyz[0], xyz[1], xyz[2]} {}
 
             float x() const {
                 return vector.x();
@@ -28,7 +31,7 @@ namespace rerun {
                 return vector.z();
             }
 
-            // [CODEGEN COPY TO HEADER END]
+            // </CODEGEN_COPY_TO_HEADER>
         };
 #endif
     } // namespace components

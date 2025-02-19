@@ -2,9 +2,9 @@
 #include <rerun/archetypes/line_strips2d.hpp>
 #include <rerun/recording_stream.hpp>
 
-int main(int argc, char** argv) {
-    auto rec = rerun::RecordingStream("rerun_example_roundtrip_line_strip2d");
-    rec.save(argv[1]).throw_on_failure();
+int main(int, char** argv) {
+    const auto rec = rerun::RecordingStream("rerun_example_roundtrip_line_strips2d");
+    rec.save(argv[1]).exit_on_failure();
 
     rec.log(
         "line_strips2d",
@@ -15,10 +15,9 @@ int main(int argc, char** argv) {
             .with_labels({"hello", "friend"})
             .with_draw_order(300.0)
             .with_class_ids({126, 127})
-            .with_instance_keys({66, 666})
     );
 
-    // Hack to establish 2d view bounds
+    // Hack to establish 2D view bounds
     rec.log(
         "rect",
         rerun::archetypes::Boxes2D::from_mins_and_sizes({{-10.0f, -10.0f}}, {{20.0f, 20.0f}})

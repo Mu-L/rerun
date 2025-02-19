@@ -2,7 +2,6 @@
 
 use rerun::{
     archetypes::{Boxes2D, Points2D},
-    external::re_log,
     RecordingStream,
 };
 
@@ -22,11 +21,10 @@ fn run(rec: &RecordingStream, _args: &Args) -> anyhow::Result<()> {
             .with_labels(["hello", "friend"])
             .with_draw_order(300.0)
             .with_class_ids([126, 127])
-            .with_keypoint_ids([2, 3])
-            .with_instance_keys([66, 666]),
+            .with_keypoint_ids([2, 3]),
     )?;
 
-    // Hack to establish 2d view bounds
+    // Hack to establish 2D view bounds
     rec.log(
         "rect",
         &Boxes2D::from_mins_and_sizes([(0.0, 0.0)], [(4.0, 6.0)]),
@@ -36,17 +34,11 @@ fn run(rec: &RecordingStream, _args: &Args) -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
-    re_log::setup_native_logging();
+    re_log::setup_logging();
 
     use clap::Parser as _;
     let args = Args::parse();
 
-    let default_enabled = true;
-    args.rerun.clone().run(
-        "rerun_example_roundtrip_points2d",
-        default_enabled,
-        move |rec| {
-            run(&rec, &args).unwrap();
-        },
-    )
+    let (rec, _serve_guard) = args.rerun.init("rerun_example_roundtrip_points2d")?;
+    run(&rec, &args)
 }

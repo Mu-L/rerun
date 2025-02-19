@@ -6,17 +6,15 @@ namespace rerun {
     namespace archetypes {
 
 #ifdef EDIT_EXTENSION
-        // [CODEGEN COPY TO HEADER START]
+        // <CODEGEN_COPY_TO_HEADER>
 
         /// Creates new 3D arrows pointing in the given directions, with a base at the origin (0, 0,
         /// 0).
-        static Arrows3D from_vectors(ComponentBatch<components::Vector3D> vectors_) {
-            Arrows3D arrows;
-            arrows.vectors = std::move(vectors_);
-            return arrows;
+        static Arrows3D from_vectors(Collection<components::Vector3D> vectors_) {
+            return Arrows3D().with_vectors(vectors_);
         }
 
-        // [CODEGEN COPY TO HEADER END]
+        // </CODEGEN_COPY_TO_HEADER>
 #endif
     } // namespace archetypes
 } // namespace rerun

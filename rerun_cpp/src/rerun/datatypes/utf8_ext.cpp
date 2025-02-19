@@ -11,16 +11,25 @@ namespace rerun {
             std::string value;
 #define Utf8 Utf8Ext
 
-            // [CODEGEN COPY TO HEADER START]
+            // Don't provide a string_view constructor, std::string constructor exists and covers this.
 
-            /// Construct a `Utf8` from null-terminated UTF-8.
-            Utf8(const char* str) : value(str) {}
+            // <CODEGEN_COPY_TO_HEADER>
 
+            /// Construct from a C string.
+            Utf8(const char* utf8_) : value(utf8_) {}
+
+            /// Explicit copy assignment from a C string to avoid ambiguity in some cases.
+            Utf8& operator=(const char* utf8_) {
+                value = utf8_;
+                return *this;
+            }
+
+            /// Returns a pointer to the underlying C string.
             const char* c_str() const {
                 return value.c_str();
             }
 
-            // [CODEGEN COPY TO HEADER END]
+            // </CODEGEN_COPY_TO_HEADER>
         };
 #endif
     } // namespace datatypes

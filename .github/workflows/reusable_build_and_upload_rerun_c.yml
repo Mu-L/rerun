@@ -9,19 +9,11 @@ on:
       PLATFORM:
         required: true
         type: string
-      RELEASE_VERSION:
-        required: false
-        type: string
-        default: "prerelease"
-      UPLOAD_COMMIT_OVERRIDE:
+      ADHOC_NAME:
         required: false
         type: string
         default: ""
-      UPLOAD_COMMIT:
-        required: false
-        type: boolean
-        default: true
-      ADHOC_NAME:
+      RELEASE_COMMIT:
         required: false
         type: string
         default: ""
@@ -29,34 +21,25 @@ on:
   workflow_dispatch:
     inputs:
       ADHOC_NAME:
-        required: true
+        required: false
         type: string
         description: "Name of the adhoc build, used for upload directory"
+        default: ""
       PLATFORM:
         type: choice
         options:
-          - linux
-          - windows
-          - macos-arm
-          - macos-intel
+          - linux-arm64
+          - linux-x64
+          - windows-x64
+          - macos-arm64
+          - macos-x64
         description: "Platform to build for"
         required: true
       CONCURRENCY:
         required: false
         type: string
         default: "adhoc"
-      RELEASE_VERSION:
-        required: false
-        type: string
-        default: "prerelease"
-      UPLOAD_COMMIT_OVERRIDE:
-        required: false
-        type: string
-        default: ""
-      UPLOAD_COMMIT:
-        required: false
-        type: boolean
-        default: true
+        description: "Concurrency group to use"
 
 concurrency:
   group: ${{ inputs.CONCURRENCY }}-build-rerun_c
@@ -68,8 +51,22 @@ env:
   # https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html
   RUSTFLAGS: --cfg=web_sys_unstable_apis --deny warnings
 
-  # See https://github.com/ericseppanen/cargo-cranky/issues/8
-  RUSTDOCFLAGS: --deny warnings --deny rustdoc::missing_crate_level_docs
+  RUSTDOCFLAGS: --deny warnings
+
+  # Disable the GHA backend (Github's 10GB storage) since we use our own GCS backend.
+  # See: https://github.com/marketplace/actions/sccache-action
+  SCCACHE_GHA_ENABLED: "false"
+
+  # Wrap every `rustc` invocation in `sccache`.
+  RUSTC_WRAPPER: "sccache"
+
+  # Not only `sccache` cannot cache incremental builds, it's counter-productive to generate all
+  # these incremental artifacts when running on CI.
+  CARGO_INCREMENTAL: "0"
+
+defaults:
+  run:
+    shell: bash
 
 permissions:
   contents: "read"
@@ -89,26 +86,32 @@ jobs:
         id: set-config
         run: |
           case "${{ inputs.PLATFORM }}" in
-            linux)
-              runner="ubuntu-latest-16-cores"
-              target="x86_64-unknown-linux-gnu"
-              container="{'image': 'rerunio/ci_docker:0.10.0'}"
+            linux-arm64)
+              runner="buildjet-8vcpu-ubuntu-2204-arm"
+              target="aarch64-unknown-linux-gnu"
+              container="'rerunio/ci_docker:0.15.0'"
               lib_name="librerun_c.a"
               ;;
-            windows)
+            linux-x64)
+              runner="ubuntu-latest-16-cores"
+              target="x86_64-unknown-linux-gnu"
+              container="'rerunio/ci_docker:0.15.0'"
+              lib_name="librerun_c.a"
+              ;;
+            windows-x64)
               runner="windows-latest-8-cores"
               target="x86_64-pc-windows-msvc"
               container="null"
               lib_name="rerun_c.lib"
               ;;
-            macos-arm)
-              runner="macos-latest"
+            macos-arm64)
+              runner="macos-latest" # Small runners, because building rerun_c is fast
               target="aarch64-apple-darwin"
               container="null"
               lib_name="librerun_c.a"
               ;;
-            macos-intel)
-              runner="macos-latest"
+            macos-x64)
+              runner="macos-latest" # Small runners, because building rerun_c is fast
               target="x86_64-apple-darwin"
               container="null"
               lib_name="librerun_c.a"
@@ -126,7 +129,11 @@ jobs:
     needs: [set-config]
 
     runs-on: ${{ needs.set-config.outputs.RUNNER }}
-    container: ${{ fromJson(needs.set-config.outputs.CONTAINER) }}
+    container:
+      image: ${{ fromJson(needs.set-config.outputs.CONTAINER) }}
+      credentials:
+        username: ${{ secrets.DOCKER_HUB_USER }}
+        password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
     steps:
       - name: Show context
@@ -143,9 +150,9 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          ref: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.ref) || '' }}
+          ref: ${{ inputs.RELEASE_COMMIT || ((github.event_name == 'pull_request' && github.event.pull_request.head.ref) || '') }}
 
-      - name: Set up Rust
+      - name: Set up Rust and Authenticate to GCS
         uses: ./.github/actions/setup-rust
         with:
           cache_key: "build-${{ inputs.PLATFORM }}"
@@ -155,40 +162,27 @@ jobs:
           targets: ${{ needs.set-config.outputs.TARGET }}
 
       - name: Build rerun_c (release)
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --locked -p rerun_c --release --target ${{ needs.set-config.outputs.TARGET }}
+        run: cargo build --locked -p rerun_c --release --target ${{ needs.set-config.outputs.TARGET }}
 
-      - id: "auth"
-        uses: google-github-actions/auth@v1
-        with:
-          workload_identity_provider: ${{ secrets.GOOGLE_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
-
-      - name: Add SHORT_SHA env property with commit short sha
-        shell: bash
-        id: "short-sha"
+      - name: Get sha
+        id: get-sha
         run: |
-          if [ -z "${{ inputs.UPLOAD_COMMIT_OVERRIDE }}" ]; then
-            USED_SHA=${{ github.sha }}
-          else
-            USED_SHA=${{ inputs.UPLOAD_COMMIT_OVERRIDE }}
-          fi
-          echo "SHORT_SHA=$(echo $USED_SHA | cut -c1-7)" >> $GITHUB_OUTPUT
+          full_commit="${{ inputs.RELEASE_COMMIT || ((github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha) }}"
+          echo "sha=$(echo $full_commit | cut -c1-7)" >> "$GITHUB_OUTPUT"
 
       - name: "Upload rerun_c (commit)"
-        if: ${{ inputs.UPLOAD_COMMIT }}
-        uses: google-github-actions/upload-cloud-storage@v1
+        uses: google-github-actions/upload-cloud-storage@v2
         with:
           path: "./target/${{ needs.set-config.outputs.TARGET }}/release/${{ needs.set-config.outputs.LIB_NAME }}"
-          destination: "rerun-builds/commit/${{ steps.short-sha.outputs.SHORT_SHA }}/rerun_c/${{ inputs.PLATFORM }}"
+          destination: "rerun-builds/commit/${{ steps.get-sha.outputs.sha }}/rerun_c/${{ inputs.PLATFORM }}"
           parent: false
+          process_gcloudignore: false
 
       - name: "Upload rerun_c (adhoc)"
         if: ${{ inputs.ADHOC_NAME != '' }}
-        uses: google-github-actions/upload-cloud-storage@v1
+        uses: google-github-actions/upload-cloud-storage@v2
         with:
           path: "./target/${{ needs.set-config.outputs.TARGET }}/release/${{ needs.set-config.outputs.LIB_NAME }}"
           destination: "rerun-builds/adhoc/${{inputs.ADHOC_NAME}}/rerun_c/${{ inputs.PLATFORM }}"
           parent: false
+          process_gcloudignore: false

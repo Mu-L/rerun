@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 """Run all examples."""
+
 from __future__ import annotations
 
 import argparse
@@ -27,6 +28,8 @@ HAS_NO_RERUN_ARGS = {
     "examples/python/dna",
     "examples/python/minimal",
     "examples/python/multiprocessing",
+    "examples/python/shared_recording",
+    "examples/python/stdio",
 }
 
 MIN_PYTHON_REQUIREMENTS: dict[str : tuple[int, int]] = {
@@ -35,11 +38,23 @@ MIN_PYTHON_REQUIREMENTS: dict[str : tuple[int, int]] = {
     "examples/python/open_photogrammetry_format": (3, 10),
 }
 
+MAX_PYTHON_REQUIREMENTS: dict[str : tuple[int, int]] = {
+    "examples/python/face_tracking": (3, 11),  # TODO(ab): remove when mediapipe is 3.12 compatible
+    "examples/python/human_pose_tracking": (3, 11),  # TODO(ab): remove when mediapipe is 3.12 compatible
+    "examples/python/llm_embedding_ner": (3, 11),  # TODO(ab): remove when torch is umap-learn/numba is 3.12 compatible
+}
+
 SKIP_LIST = [
     # depth_sensor requires a specific piece of hardware to be attached
     "examples/python/live_depth_sensor",
     # ros requires complex system dependencies to be installed
     "examples/python/ros_node",
+    # this needs special treatment to run
+    "examples/python/external_data_loader",
+]
+
+MAC_SKIP_LIST = [
+    "examples/python/signed_distance_fields",
 ]
 
 
@@ -71,7 +86,7 @@ def run_py_example(path: str, viewer_port: int | None = None, *, wait: bool = Tr
     if save is not None:
         args += [f"--save={save}"]
     if viewer_port is not None:
-        args += ["--connect", f"--addr=127.0.0.1:{viewer_port}"]
+        args += ["--connect", f"--url=http://127.0.0.1:{viewer_port}"]
 
     return start_process(
         args,
@@ -112,11 +127,20 @@ def collect_examples(fast: bool) -> list[str]:
             if example in SKIP_LIST:
                 continue
 
+            major, minor, *_ = sys.version_info
+
             if example in MIN_PYTHON_REQUIREMENTS:
                 req_major, req_minor = MIN_PYTHON_REQUIREMENTS[example]
-                major, minor, *_ = sys.version_info
                 if major < req_major or (major == req_major and minor < req_minor):
                     continue
+
+            if example in MAX_PYTHON_REQUIREMENTS:
+                req_major, req_minor = MAX_PYTHON_REQUIREMENTS[example]
+                if major > req_major or (major == req_major and minor > req_minor):
+                    continue
+
+            if example in MAC_SKIP_LIST and sys.platform == "darwin":
+                continue
 
             examples.append(example)
 
@@ -156,7 +180,7 @@ class Viewer:
             args += [
                 "--web-viewer",
                 f"--web-viewer-port={self.web_viewer_port}",
-                f"--ws-server-port={self.ws_server_port}",
+                f"--port={self.ws_server_port}",
             ]
 
         self.process = subprocess.Popen(args)
@@ -193,17 +217,15 @@ def run_sdk_build() -> None:
 
 def run_viewer_build(web: bool) -> None:
     print("Building Rerun Viewer…")
-    returncode = subprocess.Popen(
-        [
-            "cargo",
-            "build",
-            "-p",
-            "rerun-cli",
-            "--no-default-features",
-            "--features=web_viewer" if web else "--features=native_viewer",
-            "--quiet",
-        ]
-    ).wait()
+    returncode = subprocess.Popen([
+        "cargo",
+        "build",
+        "-p",
+        "rerun-cli",
+        "--no-default-features",
+        "--features=web_viewer" if web else "--features=native_viewer",
+        "--quiet",
+    ]).wait()
     assert returncode == 0, f"process exited with error code {returncode}"
 
 
@@ -216,13 +238,11 @@ def run_install_requirements(examples: list[str]) -> None:
             args.extend(["-r", req])
 
     print("Installing examples requirements…")
-    returncode = subprocess.Popen(
-        [
-            "pip",
-            "install",
-            *args,
-        ]
-    ).wait()
+    returncode = subprocess.Popen([
+        "pip",
+        "install",
+        *args,
+    ]).wait()
     assert returncode == 0, f"process exited with error code {returncode}"
 
 

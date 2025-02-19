@@ -3,7 +3,7 @@
 """
 Run our end-to-end cross-language roundtrip tests for all SDKs.
 
-The list of archetypes is read directly from `crates/re_types/definitions/rerun/archetypes`.
+The list of archetypes is read directly from `crates/store/re_types/definitions/rerun/archetypes`.
 If you create a new archetype definition without end-to-end tests, this will fail.
 """
 
@@ -12,39 +12,29 @@ from __future__ import annotations
 import argparse
 import multiprocessing
 import os
-import subprocess
 import sys
 import time
 from os import listdir
 from os.path import isfile, join
 
-ARCHETYPES_PATH = "crates/re_types/definitions/rerun/archetypes"
+sys.path.append(os.path.dirname(os.path.realpath(__file__)) + "/../scripts/")
+from roundtrip_utils import cpp_build_dir, roundtrip_env, run, run_comparison  # noqa
 
-# TODO(#3207): implement missing cpp roundtrips
-opt_out = {
-    "asset3d": ["cpp", "py", "rust"],  # Don't need it, API example roundtrips cover it all
-    "bar_chart": ["cpp", "py", "rust"],  # Don't need it, API example roundtrips cover it all
-    "clear": ["cpp", "py", "rust"],  # Don't need it, API example roundtrips cover it all
-    "mesh3d": ["cpp", "py", "rust"],  # Don't need it, API example roundtrips cover it all
-    "time_series_scalar": ["cpp", "py", "rust"],  # Don't need it, API example roundtrips cover it all
-    "transform3d": [
-        "cpp"
-    ],  # TODO(#3380) - `tests/roundtrips.py --release transform3d` fails on mac (but works without --release)
-}
+ARCHETYPES_PATHS = [
+    "crates/store/re_types/definitions/rerun/archetypes",
+    "crates/store/re_types/definitions/rerun/blueprint/archetypes",
+]
 
-
-def run(
-    args: list[str], *, env: dict[str, str] | None = None, timeout: int | None = None, cwd: str | None = None
-) -> None:
-    print(f"> {subprocess.list2cmdline(args)}")
-    result = subprocess.run(args, env=env, cwd=cwd, timeout=timeout, check=False, capture_output=True, text=True)
-    assert (
-        result.returncode == 0
-    ), f"{subprocess.list2cmdline(args)} failed with exit-code {result.returncode}. Output:\n{result.stdout}\n{result.stderr}"
+opt_out = {}
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run our end-to-end cross-language roundtrip tests for all SDK")
+    parser.add_argument(
+        "--no-run",
+        action="store_true",
+        help="Do not build or run anything. Only check that the roundtrip tests exists.",
+    )
     parser.add_argument("--no-py-build", action="store_true", help="Skip building rerun-sdk for Python")
     parser.add_argument(
         "--no-cpp-build",
@@ -52,16 +42,39 @@ def main() -> None:
         help="Skip cmake configure and ahead of time build for rerun_c & rerun_cpp",
     )
     parser.add_argument("--full-dump", action="store_true", help="Dump both rrd files as tables")
-    parser.add_argument(
-        "--release",
-        action="store_true",
-        help="Run cargo invocations with --release and CMake with `-DCMAKE_BUILD_TYPE=Release` & `--config Release`",
-    )
+    parser.add_argument("--release", action="store_true", help="Run cargo invocations with --release")
     parser.add_argument("--target", type=str, default=None, help="Target used for cargo invocations")
     parser.add_argument("--target-dir", type=str, default=None, help="Target directory used for cargo invocations")
     parser.add_argument("archetype", nargs="*", type=str, default=None, help="Run only the specified archetypes")
 
     args = parser.parse_args()
+
+    # Which archetypes to run?
+    if len(args.archetype) > 0:
+        archetypes = args.archetype
+    else:
+        files = [
+            f for archetype_path in ARCHETYPES_PATHS for f in listdir(archetype_path) if isfile(join(archetype_path, f))
+        ]
+        archetypes = [
+            filename for filename, extension in [os.path.splitext(file) for file in files] if extension == ".fbs"
+        ]
+        assert len(archetypes) > 0, "No archetypes found!"
+
+    # Opt out of archetypes for which there's no test.
+    for arch in archetypes:
+        for lang in ["cpp", "python", "rust"]:
+            if lang not in opt_out.get(arch, []):
+                dir_path = f"tests/{lang}/roundtrips/{arch}"
+                if not os.path.exists(dir_path):
+                    if arch in opt_out:
+                        opt_out[arch].append(lang)
+                    else:
+                        opt_out[arch] = [lang]
+
+    if args.no_run:
+        print("All archetypes have roundtrip tests.")
+        sys.exit(0)
 
     build_env = os.environ.copy()
     if "RUST_LOG" in build_env:
@@ -73,59 +86,44 @@ def main() -> None:
         print("----------------------------------------------------------")
         print("Building rerun-sdk for Python…")
         start_time = time.time()
-        run(["just", "py-build", "--quiet"], env=build_env)
+        run(["pixi", "run", "-e", "py", "py-build", "--quiet"], env=build_env)
         elapsed = time.time() - start_time
         print(f"rerun-sdk for Python built in {elapsed:.1f} seconds")
         print("")
 
     if args.no_cpp_build:
-        print("Skipping cmake configure & build for rerun_c & rerun_cpp - assuming it is already built and up-to-date!")
+        print("Skipping cmake configure & build - assuming all tests are already built and up-to-date!")
     else:
         print("----------------------------------------------------------")
-        print("Build rerun_c & rerun_cpp…")
+        print("Build rerun_c & roundtrips for C++…")
         start_time = time.time()
-        os.makedirs("build", exist_ok=True)
-        build_type = "Debug"
-        if args.release:
-            build_type = "Release"
-        configure_args = ["cmake", f"-DCMAKE_BUILD_TYPE={build_type}", "-DCMAKE_COMPILE_WARNING_AS_ERROR=ON", ".."]
-        run(
-            configure_args,
-            env=build_env,
-            cwd="build",
-        )
-        cmake_build("rerun_sdk", args.release)
+        run(["pixi", "run", "-e", "cpp", "cpp-build-roundtrips"])
         elapsed = time.time() - start_time
         print(f"rerun-sdk for C++ built in {elapsed:.1f} seconds")
         print("")
-
-    files = [f for f in listdir(ARCHETYPES_PATH) if isfile(join(ARCHETYPES_PATH, f))]
-
-    if len(args.archetype) > 0:
-        archetypes = args.archetype
-    else:
-        archetypes = [
-            filename for filename, extension in [os.path.splitext(file) for file in files] if extension == ".fbs"
-        ]
 
     print("----------------------------------------------------------")
     print(f"Building {len(archetypes)} archetypes…")
 
     with multiprocessing.Pool() as pool:
+        start_time = time.time()
         jobs = []
         for arch in archetypes:
             arch_opt_out = opt_out.get(arch, [])
-            for language in ["cpp", "py", "rust"]:
+            for language in ["python", "rust", "cpp"]:
                 if language in arch_opt_out:
                     continue
-                job = pool.apply_async(build, (arch, language, args))
+                job = pool.apply_async(run_roundtrips, (arch, language, args))
                 jobs.append(job)
         print(f"Waiting for {len(jobs)} build jobs to finish…")
         for job in jobs:
             job.get()
+        elapsed = time.time() - start_time
+        print(f"C++, Python and Rust examples ran in {elapsed:.1f} seconds")
 
     print("----------------------------------------------------------")
-    print(f"Comparing {len(archetypes)} archetypes…")
+    print(f"Comparing recordings for {len(archetypes)} archetypes…")
+    start_time = time.time()
 
     for arch in archetypes:
         print()
@@ -139,37 +137,24 @@ def main() -> None:
             python_output_path = f"tests/python/roundtrips/{arch}/out.rrd"
             rust_output_path = f"tests/rust/roundtrips/{arch}/out.rrd"
 
-            if "py" not in arch_opt_out:
+            if "python" not in arch_opt_out:
                 run_comparison(python_output_path, rust_output_path, args.full_dump)
 
             if "cpp" not in arch_opt_out:
                 run_comparison(cpp_output_path, rust_output_path, args.full_dump)
 
     print()
+    elapsed = time.time() - start_time
+    print(f"Comparisons ran in {elapsed:.1f} seconds")
+    print()
     print("----------------------------------------------------------")
     print("All tests passed!")
 
 
-def roundtrip_env() -> dict[str, str]:
-    env = os.environ.copy()
-
-    # NOTE: Make sure to disable batching, otherwise the Arrow concatenation logic within
-    # the batcher will happily insert uninitialized padding bytes as needed!
-    env["RERUN_FLUSH_NUM_ROWS"] = "0"
-
-    # Turn on strict mode to catch errors early
-    env["RERUN_STRICT"] = "1"
-
-    # Treat any warning as panics
-    env["RERUN_PANIC_ON_WARN"] = "1"
-
-    return env
-
-
-def build(arch: str, language: str, args: argparse.Namespace) -> None:
+def run_roundtrips(arch: str, language: str, args: argparse.Namespace) -> None:
     if language == "cpp":
-        run_roundtrip_cpp(arch, args.release)
-    elif language == "py":
+        run_roundtrip_cpp(arch)
+    elif language == "python":
         run_roundtrip_python(arch)
     elif language == "rust":
         run_roundtrip_rust(arch, args.release, args.target, args.target_dir)
@@ -215,44 +200,15 @@ def run_roundtrip_rust(arch: str, release: bool, target: str | None, target_dir:
     return output_path
 
 
-def run_roundtrip_cpp(arch: str, release: bool) -> str:
+def run_roundtrip_cpp(arch: str) -> str:
     target_name = f"roundtrip_{arch}"
     output_path = f"tests/cpp/roundtrips/{arch}/out.rrd"
 
-    cmake_build(target_name, release)
-
-    cmd = [f"./build/tests/cpp/roundtrips/{target_name}", output_path]
+    extension = ".exe" if os.name == "nt" else ""
+    cmd = [f"./build/debug/tests/cpp/roundtrips/{target_name}{extension}", output_path]
     run(cmd, env=roundtrip_env(), timeout=12000)
 
     return output_path
-
-
-def cmake_build(target: str, release: bool) -> None:
-    config = "Debug"
-    if release:
-        config = "Release"
-
-    build_process_args = [
-        "cmake",
-        "--build",
-        ".",
-        "--config",
-        config,
-        "--target",
-        target,
-        "--parallel",
-        str(multiprocessing.cpu_count()),
-    ]
-    run(build_process_args, cwd="build")
-
-
-def run_comparison(rrd0_path: str, rrd1_path: str, full_dump: bool) -> None:
-    cmd = ["rerun", "compare"]
-    if full_dump:
-        cmd += ["--full-dump"]
-    cmd += [rrd0_path, rrd1_path]
-
-    run(cmd, env=roundtrip_env(), timeout=30)
 
 
 if __name__ == "__main__":

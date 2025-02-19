@@ -1,26 +1,25 @@
 //! Logs a bunch of big images to test Rerun memory usage.
 
+// Allow unwrap() in tests (allow-unwrap-in-tests doesn't apply)
+#![allow(clippy::unwrap_used)]
+
 use mimalloc::MiMalloc;
 
 use re_memory::AccountingAllocator;
 use rerun::{
     archetypes::Image,
-    datatypes::TensorData,
-    external::{image, re_memory, re_viewer},
+    external::{image, re_memory},
 };
 
 #[global_allocator]
 static GLOBAL: AccountingAllocator<MiMalloc> = AccountingAllocator::new(MiMalloc);
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    re_memory::accounting_allocator::turn_on_tracking_if_env_var(
-        re_viewer::env_vars::RERUN_TRACK_ALLOCATIONS,
-    );
+    re_memory::accounting_allocator::turn_on_tracking_if_env_var("RERUN_TRACK_ALLOCATIONS");
 
-    let store_info = rerun::new_store_info("test_image_memory_rs");
-    rerun::native_viewer::spawn(store_info, Default::default(), |rec| {
-        log_images(&rec).unwrap();
-    })?;
+    let rec = rerun::RecordingStreamBuilder::new("rerun_example_image_memory").spawn()?;
+    log_images(&rec).unwrap();
+
     Ok(())
 }
 
@@ -37,7 +36,7 @@ fn log_images(rec: &rerun::RecordingStream) -> Result<(), Box<dyn std::error::Er
     });
 
     for _ in 0..n {
-        rec.log("image", &Image::new(TensorData::from_image(image.clone())?))?;
+        rec.log("image", &Image::from_image(image.clone())?)?;
     }
 
     rec.flush_blocking();

@@ -11,10 +11,13 @@ namespace rerun {
             float xyz[3];
 #define Vec3D Vec3DExt
 
-            // [CODEGEN COPY TO HEADER START]
+            // <CODEGEN_COPY_TO_HEADER>
 
             /// Construct Vec3D from x/y/z values.
             Vec3D(float x, float y, float z) : xyz{x, y, z} {}
+
+            /// Construct Vec3D from x/y/z float pointer.
+            explicit Vec3D(const float* xyz_) : xyz{xyz_[0], xyz_[1], xyz_[2]} {}
 
             float x() const {
                 return xyz[0];
@@ -28,7 +31,7 @@ namespace rerun {
                 return xyz[2];
             }
 
-            // [CODEGEN COPY TO HEADER END]
+            // </CODEGEN_COPY_TO_HEADER>
         };
 #endif
     } // namespace datatypes

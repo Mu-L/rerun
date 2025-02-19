@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
 
 """Checks or updates cached thumbnail dimensions in example READMEs."""
+
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
-from typing import Generator
+from typing import Any, Dict, Generator
 
-import frontmatter
 import requests
+from frontmatter import load_frontmatter
 from PIL import Image
+
+Frontmatter = Dict[str, Any]
 
 
 class Example:
-    def __init__(self, path: Path, readme: str, fm: frontmatter.Post) -> None:
+    def __init__(self, path: Path, readme: str, fm: Frontmatter) -> None:
         self.path = path
         self.readme = readme
         self.fm = fm
@@ -28,52 +32,75 @@ def get_thumbnail_dimensions(thumbnail: str) -> tuple[int, int]:
 
 
 def examples_with_thumbnails() -> Generator[Example, None, None]:
-    for path in Path("examples/python").iterdir():
-        if (path / "README.md").exists():
-            readme = (path / "README.md").read_text()
-            fm = frontmatter.loads(readme)
-            if fm.get("thumbnail"):
-                yield Example(path, readme, fm)
+    def single_language(lang: str) -> Generator[Example, None, None]:
+        for path in Path(f"examples/{lang}").iterdir():
+            if (path / "README.md").exists():
+                readme = (path / "README.md").read_text(encoding="utf-8")
+                fm = load_frontmatter(readme)
+                if fm is not None and fm.get("thumbnail"):
+                    yield Example(path, readme, fm)
+
+    yield from single_language("c")
+    yield from single_language("cpp")
+    yield from single_language("rust")
+    yield from single_language("python")
 
 
 def update() -> None:
-    for example in examples_with_thumbnails():
-        width, height = get_thumbnail_dimensions(example.fm["thumbnail"])
+    with ThreadPoolExecutor() as ex:
 
-        if "thumbnail_dimensions" not in example.fm:
-            start = example.readme.find("thumbnail: ")
-            assert start != -1
-            end = example.readme.find("\n", start)
-            assert end != -1
-            start = end + 1
-        else:
-            start = example.readme.find("thumbnail_dimensions: ")
-            assert start != -1
-            end = example.readme.find("\n", start)
-            assert end != -1
+        def work(example: Example):
+            width, height = get_thumbnail_dimensions(example.fm["thumbnail"])
 
-        (example.path / "README.md").write_text(
-            example.readme[:start] + f"thumbnail_dimensions: [{width}, {height}]" + example.readme[end:]
-        )
+            if "thumbnail_dimensions" not in example.fm:
+                start = example.readme.find("thumbnail = ")
+                assert start != -1
+                end = example.readme.find("\n", start)
+                assert end != -1
+                start = end + 1
+            else:
+                start = example.readme.find("thumbnail_dimensions = ")
+                assert start != -1
+                end = example.readme.find("\n", start)
+                assert end != -1
 
-        print(f"✔ {example.path}")
+            (example.path / "README.md").write_text(
+                example.readme[:start] + f"thumbnail_dimensions = [{width}, {height}]" + example.readme[end:],
+                encoding="utf-8",
+                newline="\n",
+            )
+
+            print(f"✔ {example.path}")
+
+        futures = [ex.submit(work, example) for example in examples_with_thumbnails()]
+        ex.shutdown()
+        for future in futures:
+            future.result()
 
 
 def check() -> None:
     bad = False
-    for example in examples_with_thumbnails():
-        if not example.fm.get("thumbnail_dimensions"):
-            print(f"{example.path} has no `thumbnail_dimensions`")
-            bad = True
-            continue
+    with ThreadPoolExecutor() as ex:
 
-        current = tuple(example.fm["thumbnail_dimensions"])
-        actual = get_thumbnail_dimensions(example.fm["thumbnail"])
-        if current != actual:
-            print(f"{example.path} `thumbnail_dimensions` are incorrect (current: {current}, actual: {actual})")
-            bad = True
+        def work(example: Example):
+            nonlocal bad
+            if not example.fm.get("thumbnail_dimensions"):
+                print(f"{example.path} has no `thumbnail_dimensions`")
+                bad = True
+                return
 
-        print(f"✔ {example.path}")
+            current = tuple(example.fm["thumbnail_dimensions"])
+            actual = get_thumbnail_dimensions(example.fm["thumbnail"])
+            if current != actual:
+                print(f"{example.path} `thumbnail_dimensions` are incorrect (current: {current}, actual: {actual})")
+                bad = True
+            else:
+                print(f"✔ {example.path}")
+
+        futures = [ex.submit(work, example) for example in examples_with_thumbnails()]
+        ex.shutdown()
+        for future in futures:
+            future.result()
 
     if bad:
         print("Please run `scripts/ci/thumbnails.py update`.")

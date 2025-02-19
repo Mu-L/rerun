@@ -1,9 +1,9 @@
 #include <rerun/archetypes/points3d.hpp>
 #include <rerun/recording_stream.hpp>
 
-int main(int argc, char** argv) {
-    auto rec = rerun::RecordingStream("rerun_example_roundtrip_points3d");
-    rec.save(argv[1]).throw_on_failure();
+int main(int, char** argv) {
+    const auto rec = rerun::RecordingStream("rerun_example_roundtrip_points3d");
+    rec.save(argv[1]).exit_on_failure();
 
     rec.log(
         "points3d",
@@ -13,6 +13,5 @@ int main(int argc, char** argv) {
             .with_labels({"hello", "friend"})
             .with_class_ids({126, 127})
             .with_keypoint_ids({2, 3})
-            .with_instance_keys({66, 666})
     );
 }

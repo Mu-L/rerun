@@ -13,6 +13,9 @@ on:
       - opened
       - synchronize
 
+permissions:
+  contents: "read"
+
 jobs:
   checks:
     name: "Checks"
@@ -29,4 +32,3 @@ jobs:
     with:
       CONCURRENCY: pr-${{ github.event.pull_request.number }}
       MATURIN_FEATURE_FLAGS: "--no-default-features --features extension-module"
-

@@ -1,9 +1,9 @@
 //! This example shows how to wrap the Rerun Viewer in your own GUI.
 
 use re_viewer::external::{
-    arrow2, eframe, egui, re_arrow_store, re_data_store, re_log, re_log_types, re_memory, re_query,
-    re_types,
+    arrow, eframe, egui, re_chunk_store, re_entity_db, re_log, re_log_types, re_memory, re_types,
 };
+use re_viewer::AsyncRuntimeHandle;
 
 // By using `re_memory::AccountingAllocator` Rerun can keep track of exactly how much memory it is using,
 // and prune the data store when it goes above a certain limit.
@@ -14,34 +14,29 @@ static GLOBAL: re_memory::AccountingAllocator<mimalloc::MiMalloc> =
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let main_thread_token = re_viewer::MainThreadToken::i_promise_i_am_on_the_main_thread();
+
     // Direct calls using the `log` crate to stderr. Control with `RUST_LOG=debug` etc.
-    re_log::setup_native_logging();
+    re_log::setup_logging();
 
     // Install handlers for panics and crashes that prints to stderr and send
     // them to Rerun analytics (if the `analytics` feature is on in `Cargo.toml`).
     re_crash_handler::install_crash_handlers(re_viewer::build_info());
 
-    // Listen for TCP connections from Rerun's logging SDKs.
+    // Listen for gRPC connections from Rerun's logging SDKs.
     // There are other ways of "feeding" the viewer though - all you need is a `re_smart_channel::Receiver`.
-    let rx = re_sdk_comms::serve(
-        "0.0.0.0",
-        re_sdk_comms::DEFAULT_SERVER_PORT,
-        Default::default(),
-    )
-    .await?;
+    let rx = re_grpc_server::spawn_with_recv(
+        "0.0.0.0:9876".parse()?,
+        "75%".parse()?,
+        re_grpc_server::shutdown::never(),
+    );
 
-    let native_options = eframe::NativeOptions {
-        app_id: Some("rerun_example_app_id".to_owned()),
-        ..re_viewer::native::eframe_options()
-    };
+    let mut native_options = re_viewer::native::eframe_options(None);
+    native_options.viewport = native_options
+        .viewport
+        .with_app_id("rerun_extend_viewer_ui_example");
 
-    let startup_options = re_viewer::StartupOptions {
-        memory_limit: re_memory::MemoryLimit {
-            // Start pruning the data once we reach this much memory allocated
-            limit: Some(12_000_000_000),
-        },
-        ..Default::default()
-    };
+    let startup_options = re_viewer::StartupOptions::default();
 
     // This is used for analytics, if the `analytics` feature is on in `Cargo.toml`
     let app_env = re_viewer::AppEnvironment::Custom("My Wrapper".to_owned());
@@ -51,17 +46,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         window_title,
         native_options,
         Box::new(move |cc| {
-            let re_ui = re_viewer::customize_eframe(cc);
+            re_viewer::customize_eframe_and_setup_renderer(cc)?;
 
             let mut rerun_app = re_viewer::App::new(
+                main_thread_token,
                 re_viewer::build_info(),
                 &app_env,
                 startup_options,
-                re_ui,
-                cc.storage,
+                cc,
+                AsyncRuntimeHandle::from_current_tokio_runtime_or_wasmbindgen()?,
             );
             rerun_app.add_receiver(rx);
-            Box::new(MyApp { rerun_app })
+            Ok(Box::new(MyApp { rerun_app }))
         }),
     )?;
 
@@ -100,8 +96,8 @@ impl MyApp {
         });
         ui.separator();
 
-        if let Some(store_db) = self.rerun_app.recording_db() {
-            store_db_ui(ui, store_db);
+        if let Some(entity_db) = self.rerun_app.recording_db() {
+            entity_db_ui(ui, entity_db);
         } else {
             ui.label("No log database loaded yet.");
         }
@@ -109,8 +105,8 @@ impl MyApp {
 }
 
 /// Show the content of the log database.
-fn store_db_ui(ui: &mut egui::Ui, store_db: &re_data_store::StoreDb) {
-    if let Some(store_info) = store_db.store_info() {
+fn entity_db_ui(ui: &mut egui::Ui, entity_db: &re_entity_db::EntityDb) {
+    if let Some(store_info) = entity_db.store_info() {
         ui.label(format!("Application ID: {}", store_info.application_id));
     }
 
@@ -124,9 +120,9 @@ fn store_db_ui(ui: &mut egui::Ui, store_db: &re_data_store::StoreDb) {
     egui::ScrollArea::vertical()
         .auto_shrink([false, true])
         .show(ui, |ui| {
-            for entity_path in store_db.entity_db().entity_paths() {
+            for entity_path in entity_db.entity_paths() {
                 ui.collapsing(entity_path.to_string(), |ui| {
-                    entity_ui(ui, store_db, timeline, entity_path);
+                    entity_ui(ui, entity_db, timeline, entity_path);
                 });
             }
         });
@@ -134,16 +130,19 @@ fn store_db_ui(ui: &mut egui::Ui, store_db: &re_data_store::StoreDb) {
 
 fn entity_ui(
     ui: &mut egui::Ui,
-    store_db: &re_data_store::StoreDb,
+    entity_db: &re_entity_db::EntityDb,
     timeline: re_log_types::Timeline,
     entity_path: &re_log_types::EntityPath,
 ) {
     // Each entity can have many components (e.g. position, color, radius, …):
-    if let Some(mut components) = store_db.store().all_components(&timeline, entity_path) {
-        components.sort(); // Make the order predicatable
+    if let Some(components) = entity_db
+        .storage_engine()
+        .store()
+        .all_components_on_timeline_sorted(&timeline, entity_path)
+    {
         for component in components {
             ui.collapsing(component.to_string(), |ui| {
-                component_ui(ui, store_db, timeline, entity_path, component);
+                component_ui(ui, entity_db, timeline, entity_path, component);
             });
         }
     }
@@ -151,47 +150,47 @@ fn entity_ui(
 
 fn component_ui(
     ui: &mut egui::Ui,
-    store_db: &re_data_store::StoreDb,
+    entity_db: &re_entity_db::EntityDb,
     timeline: re_log_types::Timeline,
     entity_path: &re_log_types::EntityPath,
     component_name: re_types::ComponentName,
 ) {
     // You can query the data for any time point, but for now
     // just show the last value logged for each component:
-    let query = re_arrow_store::LatestAtQuery::latest(timeline);
+    let query = re_chunk_store::LatestAtQuery::latest(timeline);
 
-    if let Some((_, component)) = re_query::get_component_with_instances(
-        store_db.store(),
-        &query,
-        entity_path,
-        component_name,
-    ) {
+    let results =
+        entity_db
+            .storage_engine()
+            .cache()
+            .latest_at(&query, entity_path, [component_name]);
+
+    if let Some(data) = results.component_batch_raw(&component_name) {
         egui::ScrollArea::vertical()
             .auto_shrink([false, true])
             .show(ui, |ui| {
                 // Iterate over all the instances (e.g. all the points in the point cloud):
-                for instance_key in component.instance_keys() {
-                    if let Some(value) = component.lookup_arrow(&instance_key) {
-                        ui.label(format_arrow(&*value));
-                    }
+
+                let num_instances = data.len();
+                for i in 0..num_instances {
+                    ui.label(format_arrow(&*data.slice(i, 1)));
                 }
             });
     };
 }
 
-fn format_arrow(value: &dyn arrow2::array::Array) -> String {
-    use re_types::SizeBytes as _;
+fn format_arrow(array: &dyn arrow::array::Array) -> String {
+    use arrow::util::display::{ArrayFormatter, FormatOptions};
 
-    let bytes = value.total_size_bytes();
-    if bytes < 256 {
+    let num_bytes = array.get_buffer_memory_size();
+    if array.len() == 1 && num_bytes < 256 {
         // Print small items:
-        let mut string = String::new();
-        let display = arrow2::array::get_display(value, "null");
-        if display(&mut string, 0).is_ok() {
-            return string;
+        let options = FormatOptions::default();
+        if let Ok(formatter) = ArrayFormatter::try_new(array, &options) {
+            return formatter.value(0).to_string();
         }
     }
 
     // Fallback:
-    format!("{bytes} bytes")
+    format!("{num_bytes} bytes")
 }

@@ -1,10 +1,6 @@
 //! Logs a `Tensor` archetype for roundtrip checks.
 
-use rerun::{
-    archetypes::TextDocument,
-    external::{re_log, re_types::components::MediaType},
-    RecordingStream,
-};
+use rerun::{archetypes::TextDocument, external::re_log, RecordingStream};
 
 #[derive(Debug, clap::Parser)]
 #[clap(author, version, about)]
@@ -17,31 +13,24 @@ fn run(rec: &RecordingStream, _args: &Args) -> anyhow::Result<()> {
     rec.log("text_document", &TextDocument::new("Hello, TextDocument!"))?;
     rec.log(
         "markdown",
-        &TextDocument::new(
+        &TextDocument::from_markdown(
             "# Hello\n\
              Markdown with `code`!\n\
              \n\
              A random image:\n\
              \n\
              ![A random image](https://picsum.photos/640/480)",
-        )
-        .with_media_type(MediaType::markdown()),
+        ),
     )?;
     Ok(())
 }
 
 fn main() -> anyhow::Result<()> {
-    re_log::setup_native_logging();
+    re_log::setup_logging();
 
     use clap::Parser as _;
     let args = Args::parse();
 
-    let default_enabled = true;
-    args.rerun.clone().run(
-        "rerun_example_roundtrip_tensor",
-        default_enabled,
-        move |rec| {
-            run(&rec, &args).unwrap();
-        },
-    )
+    let (rec, _serve_guard) = args.rerun.init("rerun_example_roundtrip_text_document")?;
+    run(&rec, &args)
 }

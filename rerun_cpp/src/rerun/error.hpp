@@ -28,29 +28,43 @@ namespace rerun {
     /// Category codes are used to group errors together, but are never returned directly.
     enum class ErrorCode : uint32_t {
         Ok = 0x0000'0000,
-        OutOfMemory = 0x0000'0001,
-        NotImplemented = 0x0000'0002,
+        OutOfMemory,
+        NotImplemented,
+        SdkVersionMismatch,
 
         // Invalid argument errors.
         _CategoryArgument = 0x0000'0010,
         UnexpectedNullArgument,
         InvalidStringArgument,
+        InvalidEnumValue,
         InvalidRecordingStreamHandle,
         InvalidSocketAddress,
+        InvalidComponentTypeHandle,
         InvalidTensorDimension,
+        InvalidArchetypeField,
+        FileRead,
+        InvalidServerUrl,
 
         // Recording stream errors
         _CategoryRecordingStream = 0x0000'0100,
+        RecordingStreamRuntimeFailure,
         RecordingStreamCreationFailure,
         RecordingStreamSaveFailure,
+        RecordingStreamStdoutFailure,
+        RecordingStreamSpawnFailure,
+        RecordingStreamChunkValidationFailure,
 
         // Arrow data processing errors.
         _CategoryArrow = 0x0000'1000,
-        ArrowIpcMessageParsingFailure,
-        ArrowDataCellError,
+        ArrowFfiSchemaImportError,
+        ArrowFfiArrayImportError,
+
+        // Utility errors.
+        _CategoryUtilities = 0x0001'0000,
+        VideoLoadError,
 
         // Errors relating to file IO.
-        _CategoryFileIO = 0x0001'0000,
+        _CategoryFileIO = 0x0010'0000,
         FileOpenFailure,
 
         // Errors directly translated from arrow::StatusCode.
@@ -124,8 +138,8 @@ namespace rerun {
         ///
         /// The default will log to stderr, unless `RERUN_STRICT` is set to something truthy.
         ///
-        /// @param handler The handler to call, or `nullptr` to reset to the default.
-        /// @param userdata Userdata pointer that will be passed to each invocation of the handler.
+        /// \param handler The handler to call, or `nullptr` to reset to the default.
+        /// \param userdata Userdata pointer that will be passed to each invocation of the handler.
         ///
         /// @see log, log_on_failure
         static void set_log_handler(StatusLogHandler handler, void* userdata = nullptr);
@@ -143,13 +157,22 @@ namespace rerun {
         /// the error will be logged to stderr.
         void handle() const;
 
-#ifdef __cpp_exceptions
+        /// Calls the `handle` method and then exits the application with code 1 if the error is not `Ok`.
+        /// @see throw_on_failure
+        void exit_on_failure() const;
+
         /// Throws a `std::runtime_error` if the status is not `Ok`.
+        ///
+        /// If exceptions are disabled, this will forward to `exit_on_failure` instead.
+        /// @see exit_on_failure
         void throw_on_failure() const {
+#ifdef __cpp_exceptions
             if (is_err()) {
                 throw std::runtime_error(description);
             }
-        }
+#else
+            exit_on_failure();
 #endif
+        }
     };
 } // namespace rerun

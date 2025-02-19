@@ -21,29 +21,45 @@ git clone git@github.com:rerun-io/rerun.git
 cd rerun
 ```
 
-Finally, run the following script to install the dependencies and CLI tools needed for Rerun's build environment:
+Now install the `pixi` package manager: <https://github.com/prefix-dev/pixi?tab=readme-ov-file#installation>
 
-```sh
-./scripts/setup_dev.sh
-```
-
-Make sure `cargo --version` prints `1.72.1` once you are done.
+Make sure `cargo --version` prints `1.81.0` once you are done.
 
 If you are using an Apple-silicon Mac (M1, M2), make sure `rustc -vV` outputs `host: aarch64-apple-darwin`. If not, this should fix it:
 
 ```sh
-rustup set default-host aarch64-apple-darwin && rustup install 1.72.1
+rustup set default-host aarch64-apple-darwin && rustup install 1.81.0
 ```
 
-## Building and running the viewer
+## Git-lfs
+
+We use [git-lfs](https://git-lfs.com/) to store big files in the repository, such as UI test snapshots.
+We aim to keep this project buildable without the need of git-lfs (for example, icons and similar assets are checked in to the repo as regular files).
+However, git-lfs is generally required for a proper development environment, e.g. to run tests.
+
+### Setting up git-lfs
+
+The TL;DR is to install git-lfs via your favorite package manager (`apt`, Homebrew, MacPorts, etc.) and run `git lfs install`.
+See the many resources available online more details.
+
+You can ensure that everything is correctly installed by running `git lfs ls-files` from the repository root.
+It should list some test snapshot files.
+
+
+## Validating your environment
+You can validate your environment is set up correctly by running:
+```sh
+pixi run check-env
+```
+
+
+## Building and running the Viewer
 
 Use this command for building and running the viewer:
 
 ```sh
-cargo rerun
+pixi run rerun
 ```
-
-This custom cargo command is enabled by an alias located in `.cargo/config.toml`.
 
 
 ## Running the Rust examples
@@ -54,105 +70,82 @@ All Rust examples are set up as separate executables, so they can be run by spec
 cargo run -p dna
 ```
 
+They will either connect to an already running rerun viewer, or spawn a new one.
+In debug builds, it will spawn `target/debug/rerun` if it exists, otherwise look for `rerun` on `PATH`.
+
 
 ## Building and installing the Rerun Python SDK
 
 Rerun is available as a package on PyPi and can be installed with `pip install rerun-sdk`.
 
-Additionally, prebuilt dev wheels from head of main are available at <https://github.com/rerun-io/rerun/releases/tag/prerelease>.
+Additionally, nightly dev wheels from head of `main` are available at <https://github.com/rerun-io/rerun/releases/tag/prerelease>.
 
-If you want to build from source, use the following instructions.
+If you want to build from source, you can do so easily in the Pixi environment:
+* Run `pixi run py-build --release` to build SDK & Viewer for Python (or `pixi run py-build` for a debug build)
+* Then you can run examples from the repository, either by making the Pixi shell active with  `pixi shell` and then running Python or by using `pixi run`, e.g. `pixi run Python examples/python/minimal/minimal.py`
 
-### Mac/Linux
 
-First, a local virtual environment must be created and the necessary dependencies installed (this needs to be done only once):
-
-```sh
-just py-dev-env
-source venv/bin/activate
-```
-
-Then, the SDK can be compiled and installed in the virtual environment using the following command:
+### Tests & tooling
 
 ```sh
-just py-build
+# Run the unit tests
+pixi run py-test
+
+# Run the linting checks
+pixi run py-lint
+
+# Run the formatter
+pixi run py-fmt
 ```
 
-This needs to be repeated each time the Rust source code is updated, for example after updating your clone using `git pull`.
-
-Finally, the virtual environment must be activated to run Python examples:
-
+### Building an installable Python wheel
+The `py-build-wheels-sdk-only` command builds a whl file:
 ```sh
-source venv/bin/activate
-python examples/python/car/main.py
+pixi run py-build-wheels-sdk-only
+```
+Which you can then install in your own Python environment:
+```sh
+pip install ./dist/CURRENT_ARCHITECTURE/*.whl
 ```
 
-### Windows (PowerShell)
+**IMPORTANT**: unlike the official wheels, wheels produced by this method do _not_ contain the viewer, so they may only be used for logging purposes.
 
-The `justfile` currently doesn't support Windows, so each step must be run manually.
+## Building and installing the Rerun C++ SDK
 
-First, create and activate a local virtual environment and install the required dependencies using the following commands:
+On Windows you have to have a system install of Visual Studio 2022 in order to compile the SDK and samples.
 
-```ps1
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r scripts/requirements-dev.txt
+All other dependencies are downloaded by Pixi! You can run tests with:
+```sh
+pixi run -e cpp cpp-test
 ```
-
-Then build and install the Rerun SDK with:
-
-```ps1
-maturin develop \
-    --manifest-path rerun_py/Cargo.toml \
-    --extras="tests"
-```
-
-You can then run the example using the following command:
-
-```ps1
-python examples/python/car/main.py
+and build all C++ artifacts with:
+```sh
+pixi run -e cpp cpp-build-all
 ```
 
 ## Building the docs
 
-High-level documentation for rerun can be found at [http://rerun.io/docs](http://rerun.io/docs). It is built from the separate repository [rerun-docs](https://github.com/rerun-io/rerun-docs).
+High-level documentation for Rerun can be found at [http://rerun.io/docs](http://rerun.io/docs). It is built from the separate repository [rerun-docs](https://github.com/rerun-io/rerun-docs).
 
-Python API docs can be found at <https://ref.rerun.io/docs/python> and are built via `mkdocs` and hosted on GitHub. For details on the python doc-system, see [Writing Docs](https://github.com/rerun-io/rerun/blob/main/rerun_py/docs/writing_docs.md).
+- 🌊 [C++ API docs](https://ref.rerun.io/docs/cpp) are built with `doxygen` and hosted on GitHub. Use `pixi run -e cpp cpp-docs` to build them locally. For details on the C++ doc-system, see [Writing Docs](rerun_cpp/docs/writing_docs.md).
+- 🐍 [Python API docs](https://ref.rerun.io/docs/python) are built via `mkdocs` and hosted on GitHub. For details on the Python doc-system, see [Writing Docs](rerun_py/docs/writing_docs.md).
+- 🦀 [Rust API docs](https://docs.rs/rerun/) are hosted on  <https://docs.rs/rerun/>. You can build them locally with: `cargo doc --all-features --no-deps --open`.
 
-Rust documentation is hosted on <https://docs.rs/rerun/>. You can build them locally with: `cargo doc --all-features --no-deps --open`
+## Building for the web
 
-
-## Building for the Web
-
-If you want to build a standalone rerun executable that contains the web-viewer and a websocket server,
-you need to ensure the `web_viewer` feature flag is set:
+If you want to build a standalone Rerun executable that contains the web-viewer and a websocket server,
+you need to install the `wasm32-unknown-unknown` Rust target and ensure the `web_viewer` feature flag is set when building rerun.
+This is automatically done by this shortcut which builds & runs the web viewer:
 ```
-cargo build -p rerun --features web_viewer
-```
-
-Rerun uses a standalone tool to build the web-viewer. You can invoke it directly as well:
-```
-cargo run -p re_build_web_viewer -- --release
+pixi run rerun-web
 ```
 
+If you're on Windows you have to make sure that your git client creates symlinks,
+otherwise you may get errors during the build.
+Run `git config --show-scope --show-origin core.symlinks` to check if symlinks are enabled.
+You may need to turn on Windows developer mode in order to give the `mklink` command sufficient permissions.
+See also this [Stack Overflow reply](https://stackoverflow.com/questions/5917249/git-symbolic-links-in-windows/59761201#59761201) on the issue.
 
-### Building with WebGPU support
-
-By default, all web builds are using WebGL for rendering.
-However, Rerun can also build with experimental WebGPU support!
-Note that currently we can't build wasm files that support both WebGPU and WebGL.
-
-To build a standalone Rerun executable with a WebGPU web viewer, you need to set
-the `RERUN_BUILD_WEBGPU` env variable and enable the  `web_viewer` feature:
-```
-RERUN_BUILD_WEBGPU=1 cargo build -p rerun --features web_viewer
-```
-
-And for building a WebGPU based web-viewer without the server:
-```
-cargo run -p re_build_web_viewer -- --release --webgpu
-```
 
 ## Improving compile times
 

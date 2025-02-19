@@ -29,9 +29,15 @@ Use the script:
 
     python3 scripts/upload_image.py --help
 
-or the just command:
+or the pixi command:
 
-    just upload --help
+    pixi run upload-image --help
+
+All info/debug output occurs on stderr. If stdout is not a tty (e.g. piping to `pbcopy`), the resulting HTML tag is also
+printed to stdout. For example, this upload the image from the clipboard and copies the resulting HTML tag back to the
+clipboard:
+
+    pixi run upload-image --name some_name | pbcopy
 """
 
 from __future__ import annotations
@@ -41,7 +47,6 @@ import hashlib
 import logging
 import mimetypes
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -66,8 +71,6 @@ SIZES = [
     1024,
     1200,
 ]
-
-ASPECT_RATIO_RANGE = (1.6, 1.8)
 
 
 def build_image_stack(image: Image) -> list[tuple[int | None, Image]]:
@@ -115,31 +118,13 @@ def image_from_clipboard() -> Image:
 
 
 class Uploader:
-    def __init__(self, pngcrush: bool, auto_accept: bool):
+    def __init__(self):
         gcs = storage.Client("rerun-open")
         self.bucket = gcs.bucket("rerun-static-img")
-        self.run_pngcrush = pngcrush
-        self.auto_accept = auto_accept
 
     def _check_aspect_ratio(self, image: Path | Image) -> None:
         if isinstance(image, Path):
             image = PIL.Image.open(image)
-
-        aspect_ratio = image.width / image.height
-        aspect_ok = ASPECT_RATIO_RANGE[0] < aspect_ratio < ASPECT_RATIO_RANGE[1]
-
-        if not aspect_ok and not self.auto_accept:
-            logging.warning(
-                f"Aspect ratio is {aspect_ratio:.2f} but should be between {ASPECT_RATIO_RANGE[0]} and "
-                f"{ASPECT_RATIO_RANGE[1]}."
-            )
-            if (
-                input(
-                    "The image aspect ratio is outside the range recommended for example screenshots. Continue? [y/N] "
-                ).lower()
-                != "y"
-            ):
-                sys.exit(1)
 
     def upload_file(self, path: Path) -> str:
         """
@@ -154,6 +139,7 @@ class Uploader:
         -------
         str
             The name of the uploaded file.
+
         """
 
         self._check_aspect_ratio(path)
@@ -182,6 +168,7 @@ class Uploader:
         -------
         str
             The `<picture>` tag for the image stack.
+
         """
         image = PIL.Image.open(image_path)
         self._check_aspect_ratio(image)
@@ -209,6 +196,7 @@ class Uploader:
         -------
         str
             The `<picture>` tag for the image stack.
+
         """
 
         clipboard = image_from_clipboard()
@@ -251,6 +239,7 @@ class Uploader:
         -------
         str
             The `<picture>` HTML tag for the image stack.
+
         """
 
         logging.info(f"Base image width: {image.width}px")
@@ -286,7 +275,7 @@ class Uploader:
             else:
                 html_str += f'  <img src="https://static.rerun.io/{object_name}" alt="">\n'
 
-            logging.info(f"uploaded width={width or 'full'} ({index+1}/{len(image_stack)})")
+            logging.info(f"uploaded width={width or 'full'} ({index + 1}/{len(image_stack)})")
 
         html_str += "</picture>"
         return html_str
@@ -307,10 +296,8 @@ class Uploader:
             The content type of the object.
         content_encoding : str, optional
             The content encoding of the object.
-        """
 
-        if self.run_pngcrush and content_type == "image/png":
-            data = run_pngcrush(data)
+        """
 
         logging.info(f"Uploading {path} (size: {len(data)}, type: {content_type}, encoding: {content_encoding})")
         destination = self.bucket.blob(path)
@@ -318,47 +305,11 @@ class Uploader:
         destination.content_encoding = content_encoding
 
         if destination.exists():
-            logging.warn(f"blob {path} already exists in GCS, skipping upload")
+            logging.warning(f"blob {path} already exists in GCS, skipping upload")
             return
 
         stream = BytesIO(data)
         destination.upload_from_file(stream)
-
-
-def run_pngcrush(data: bytes) -> bytes:
-    """
-    Run pngcrush on some data.
-
-    Parameters
-    ----------
-    data : bytes
-        The PNG data to crush.
-
-    Returns
-    -------
-    bytes
-        The crushed PNG data.
-    """
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        input_file = Path(tmpdir) / "input.png"
-        input_file.write_bytes(data)
-
-        output_file = Path(tmpdir) / "output.png"
-        os.system(f"pngcrush -q -warn -rem allb -reduce {input_file} {output_file}")
-        output_data = output_file.read_bytes()
-
-    input_len = len(data)
-    output_len = len(output_data)
-    if output_len > input_len:
-        logging.info("pngcrush failed to reduce file size")
-        return data
-    else:
-        logging.info(
-            f"pngcrush reduced size from {input_len} to {output_len} bytes "
-            f"({(input_len - output_len) *100/ input_len:.2f}%)"
-        )
-        return output_data
 
 
 def data_hash(data: bytes) -> str:
@@ -384,17 +335,14 @@ def download_file(url: str, path: Path) -> None:
 def run(args: argparse.Namespace) -> None:
     """Run the script based on the provided args."""
     try:
-        if shutil.which("pngcrush") is None and not args.skip_pngcrush:
-            raise RuntimeError("pngcrush is not installed, consider using --skip-pngcrush")
-
-        uploader = Uploader(not args.skip_pngcrush, args.auto_accept)
+        uploader = Uploader()
 
         if args.single:
             if args.path is None:
                 raise RuntimeError("Path is required when uploading a single image")
 
             object_name = uploader.upload_file(args.path)
-            print(f"\nhttps://static.rerun.io/{object_name}")
+            html_str = f"https://static.rerun.io/{object_name}"
         else:
             if args.path is None:
                 if args.name is None:
@@ -403,9 +351,16 @@ def run(args: argparse.Namespace) -> None:
                     html_str = uploader.upload_stack_from_clipboard(args.name)
             else:
                 html_str = uploader.upload_stack_from_file(args.path, args.name)
-            print("\n" + html_str)
+
     except RuntimeError as e:
         print(f"Error: {e.args[0]}", file=sys.stderr)
+        return
+
+    print(f"\n{html_str}", file=sys.stderr)
+
+    if not sys.stdout.isatty():
+        # we might be piping to pbcopy or similar, so we print string again to stdout
+        print(html_str)
 
 
 DESCRIPTION = """Upload an image to static.rerun.io.
@@ -419,7 +374,7 @@ To make example screenshots, follow these steps:
    Note: you will get a warning and a confirmation prompt if the aspect ratio is not within ~10% of 16:9.
 3. Groom the blueprints and panel visibility to your liking.
 4. Take a screenshot using the command palette.
-5. Run: just upload --name <name_of_example>
+5. Run: pixi run upload-image --name <name_of_example>
 6. Copy the output HTML tag and paste it into the README.md file.
 
 Other uses
@@ -427,7 +382,7 @@ Other uses
 
 Download an image, optimize it and create a multi-resolution stack:
 
-    just upload --name <name_of_stack> https://example.com/path/to/image.png
+    pixi run upload-image --name <name_of_stack> https://example.com/path/to/image.png
 """
 
 
@@ -440,8 +395,6 @@ def main() -> None:
         "--single", action="store_true", help="Upload a single image instead of creating a multi-resolution stack."
     )
     parser.add_argument("--name", type=str, help="Image name (required when uploading from clipboard).")
-    parser.add_argument("--skip-pngcrush", action="store_true", help="Skip PNGCrush.")
-    parser.add_argument("--auto-accept", action="store_true", help="Auto-accept the aspect ratio confirmation prompt")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging.")
     args = parser.parse_args()
 

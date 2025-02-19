@@ -22,17 +22,13 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
-    re_log::setup_native_logging();
+    re_log::setup_logging();
 
     use clap::Parser as _;
     let args = Args::parse();
 
-    let default_enabled = true;
-    args.rerun
-        .clone()
-        .run("rerun_example_clock", default_enabled, move |rec| {
-            run(&rec, &args).unwrap();
-        })
+    let (rec, _serve_guard) = args.rerun.init("rerun_example_clock")?;
+    run(&rec, &args)
 }
 
 fn run(rec: &rerun::RecordingStream, args: &Args) -> anyhow::Result<()> {
@@ -43,9 +39,9 @@ fn run(rec: &rerun::RecordingStream, args: &Args) -> anyhow::Result<()> {
     const WIDTH_M: f32 = 0.4;
     const WIDTH_H: f32 = 0.6;
 
-    rec.log_timeless("world", &rerun::ViewCoordinates::RIGHT_HAND_Y_UP)?;
+    rec.log_static("world", &rerun::ViewCoordinates::RIGHT_HAND_Y_UP())?;
 
-    rec.log_timeless(
+    rec.log_static(
         "world/frame",
         &rerun::Boxes3D::from_half_sizes([(LENGTH_S, LENGTH_S, 1.0)]),
     )?;

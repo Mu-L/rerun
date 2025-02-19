@@ -1,9 +1,12 @@
 //! Logs an `Image` archetype for roundtrip checks.
 
+// Allow unwrap() in tests (allow-unwrap-in-tests doesn't apply)
+#![allow(clippy::unwrap_used)]
+
 use half::f16;
 use image::{Rgb, RgbImage};
 use ndarray::{Array, ShapeBuilder};
-use rerun::{archetypes::Image, external::re_log, RecordingStream};
+use rerun::{archetypes::Image, RecordingStream};
 
 #[derive(Debug, clap::Parser)]
 #[clap(author, version, about)]
@@ -22,7 +25,10 @@ fn run(rec: &RecordingStream, _args: &Args) -> anyhow::Result<()> {
         }
     }
 
-    rec.log("image", &Image::try_from(img)?)?;
+    rec.log(
+        "image",
+        &Image::from_color_model_and_tensor(rerun::ColorModel::RGB, img)?,
+    )?;
 
     let mut array_image = Array::<f16, _>::default((4, 5).f());
 
@@ -33,23 +39,20 @@ fn run(rec: &RecordingStream, _args: &Args) -> anyhow::Result<()> {
         }
     }
 
-    rec.log("image_f16", &Image::try_from(array_image)?)?;
+    rec.log(
+        "image_f16",
+        &Image::from_color_model_and_tensor(rerun::ColorModel::L, array_image)?,
+    )?;
 
     Ok(())
 }
 
 fn main() -> anyhow::Result<()> {
-    re_log::setup_native_logging();
+    re_log::setup_logging();
 
     use clap::Parser as _;
     let args = Args::parse();
 
-    let default_enabled = true;
-    args.rerun.clone().run(
-        "rerun_example_roundtrip_image",
-        default_enabled,
-        move |rec| {
-            run(&rec, &args).unwrap();
-        },
-    )
+    let (rec, _serve_guard) = args.rerun.init("rerun_example_roundtrip_image")?;
+    run(&rec, &args)
 }
