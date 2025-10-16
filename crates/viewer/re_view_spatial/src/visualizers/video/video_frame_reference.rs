@@ -30,8 +30,6 @@ use crate::{
     },
 };
 
-// TODO(#9832): Support opacity for videos
-// TODO(jan): Fallback opacity in the same way as color/depth/segmentation images
 pub struct VideoFrameReferenceVisualizer {
     pub data: SpatialViewVisualizerData,
 }
@@ -170,7 +168,10 @@ impl VideoFrameReferenceVisualizer {
 
         let world_from_entity = spatial_ctx
             .transform_info
-            .single_entity_transform_required(ctx.target_entity_path, VideoFrameReference::name());
+            .single_transform_required_for_entity(
+                ctx.target_entity_path,
+                VideoFrameReference::name(),
+            );
 
         // Note that we may or may not know the video size independently of error occurrence.
         // (if it's just a decoding error we may still know the size from the container!)
